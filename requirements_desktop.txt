@@ -1,0 +1,6 @@
+# ClipForge Desktop — additional dependencies for the desktop wrapper
+# Install alongside the backend requirements:
+#   pip install -r backend/requirements.txt -r requirements_desktop.txt
+
+pywebview>=5.0
+pyinstaller>=6.0

@@ -1,0 +1,19 @@
+# Secrets — never commit these
+backend/cookies.txt
+*.pem
+.env
+cookies.txt
+
+# Runtime artifacts
+backend/data/
+*.mp4
+*.ass
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# OS noise
+.DS_Store
+Thumbs.db

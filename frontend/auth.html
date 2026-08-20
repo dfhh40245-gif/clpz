@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Log in or sign up — CLPZ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#121214; --panel:#19191c; --panel-raised:#212125;
+    --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.15);
+    --ink:#f2f1ec; --ink-dim:#a3a29d; --ink-faint:#68675f;
+    --accent:#efa93a; --accent-ink:#211203; --accent-soft:rgba(239,169,58,.13);
+    --danger:#e07856;
+    --r-sm:6px; --r-md:10px; --r-lg:16px; --r-xl:22px;
+    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s8:32px; --s10:40px;
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-display: "Bricolage Grotesque", var(--font-ui);
+  }
+  *,*::before,*::after{ box-sizing:border-box; }
+  body{
+    margin:0; min-height:100vh; background:
+      radial-gradient(ellipse 900px 500px at 50% -10%, rgba(239,169,58,.08), transparent 60%),
+      radial-gradient(ellipse 600px 400px at 80% 20%, rgba(239,169,58,.03), transparent 50%),
+      var(--bg);
+    color:var(--ink); font-family:var(--font-ui); -webkit-font-smoothing:antialiased;
+    display:flex; flex-direction:column;
+  }
+  a{ color:inherit; text-decoration:none; }
+  button{ font:inherit; }
+  :focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
+
+  .topbar{ padding:var(--s6); }
+  .back{ font-size:14px; color:var(--ink-dim); display:inline-flex; align-items:center; gap:6px; }
+  .back:hover{ color:var(--ink); }
+
+  main{ flex:1; display:flex; align-items:center; justify-content:center; padding:var(--s6); }
+  .panel{ width:100%; max-width:400px; animation:panelIn .5s cubic-bezier(.22,1,.36,1) both; }
+  @keyframes panelIn{ from{ opacity:0; transform:translateY(16px); } to{ opacity:1; transform:none; } }
+  .logo{ font-family:var(--font-display); font-weight:700; font-size:22px; text-align:center; margin-bottom:var(--s8); display:block; }
+
+  .tabs{ display:flex; border-bottom:1px solid var(--border); margin-bottom:var(--s6); }
+  .tab{
+    flex:1; text-align:center; padding-bottom:var(--s3); font-size:14.5px; font-weight:600;
+    color:var(--ink-faint); border-bottom:2px solid transparent; margin-bottom:-1px;
+    background:none; border-top:0; border-left:0; border-right:0; cursor:pointer;
+  }
+  .tab.active{ color:var(--ink); border-bottom-color:var(--accent); }
+
+  h1{ font-family:var(--font-display); font-size:22px; margin:0 0 var(--s6); text-align:center; font-weight:600; }
+
+  form{ display:flex; flex-direction:column; gap:var(--s4); }
+  .field label{ display:block; font-size:13px; color:var(--ink-dim); margin-bottom:6px; }
+  .field input{
+    width:100%; height:44px; background:var(--panel); border:1px solid var(--border-strong);
+    border-radius:var(--r-md); padding-inline:var(--s4); color:var(--ink); font-size:14.5px;
+    transition:border-color .2s ease, box-shadow .2s ease;
+  }
+  .field input:focus{ border-color:var(--accent); outline:none; box-shadow:0 0 0 3px rgba(239,169,58,.12); }
+  .row-between{ display:flex; justify-content:space-between; align-items:center; }
+  .forgot{ font-size:12.5px; color:var(--ink-faint); }
+  .forgot:hover{ color:var(--ink-dim); }
+
+  .btn{
+    height:46px; border-radius:var(--r-md); font-size:14.5px; font-weight:600;
+    display:flex; align-items:center; justify-content:center; gap:8px; cursor:pointer; border:0;
+    transition:background-color .12s ease, opacity .12s ease;
+  }
+  .btn-primary{ background:var(--accent); color:var(--accent-ink); box-shadow:0 0 20px rgba(239,169,58,.2); }
+  .btn-primary:hover{ background:#f4b654; box-shadow:0 0 28px rgba(239,169,58,.3); transform:translateY(-1px); }
+  .btn-primary:disabled{ opacity:.6; cursor:default; transform:none; box-shadow:none; }
+  .btn-google{
+    background:var(--panel); border:1px solid var(--border-strong); color:var(--ink);
+    transition:border-color .2s ease, background .2s ease;
+  }
+  .btn-google:hover{ border-color:var(--ink-dim); background:var(--panel-raised); }
+
+  .divider{ display:flex; align-items:center; gap:var(--s3); margin:var(--s2) 0; color:var(--ink-faint); font-size:12.5px; }
+  .divider::before, .divider::after{ content:""; flex:1; height:1px; background:var(--border); }
+
+  .error{
+    display:none; font-size:13px; color:var(--danger); background:rgba(224,120,86,.1);
+    border:1px solid rgba(224,120,86,.3); border-radius:var(--r-sm); padding:var(--s3);
+  }
+  .error.show{ display:block; }
+
+  .reassure{ margin-top:var(--s6); font-size:12.5px; color:var(--ink-faint); text-align:center; line-height:1.6; }
+
+  form.hidden{ display:none; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="index.html" class="back">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M11 5l-7 7 7 7M4 12h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    CLPZ
+  </a>
+</div>
+
+<main>
+  <div class="panel">
+    <span class="logo">CLPZ</span>
+
+    <div class="tabs" role="tablist">
+      <button class="tab" id="tabLogin" role="tab">Log in</button>
+      <button class="tab" id="tabSignup" role="tab">Sign up</button>
+    </div>
+
+    <h1 id="formHeading">Create your account</h1>
+    <div class="error" id="errorBox" role="alert"></div>
+
+    <form id="loginForm" class="hidden" autocomplete="on">
+      <div class="field">
+        <label for="loginEmail">Email</label>
+        <input type="email" id="loginEmail" name="email" required autocomplete="email" />
+      </div>
+      <div class="field">
+        <div class="row-between">
+          <label for="loginPassword" style="margin-bottom:0;">Password</label>
+          <a href="#" class="forgot" id="forgotLink">Forgot password?</a>
+        </div>
+        <input type="password" id="loginPassword" name="password" required autocomplete="current-password" />
+      </div>
+      <button type="submit" class="btn btn-primary" id="loginSubmit">Log in</button>
+      <div class="divider">or</div>
+      <a href="/api/auth/google" class="btn btn-google">
+        <svg width="16" height="16" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.9c1.7-1.57 2.7-3.88 2.7-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.98v2.33A9 9 0 009 18z"/><path fill="#FBBC05" d="M3.95 10.7A5.4 5.4 0 013.68 9c0-.59.1-1.16.27-1.7V4.97H.98A9 9 0 000 9c0 1.45.35 2.83.98 4.03l2.97-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 00.98 4.97L3.95 7.3C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
+        Continue with Google
+      </a>
+    </form>
+
+    <form id="signupForm" autocomplete="on">
+      <div class="field">
+        <label for="signupEmail">Email</label>
+        <input type="email" id="signupEmail" name="email" required autocomplete="email" />
+      </div>
+      <div class="field">
+        <label for="signupPassword">Password</label>
+        <input type="password" id="signupPassword" name="password" required autocomplete="new-password" minlength="8" />
+      </div>
+      <div class="field">
+        <label for="signupConfirm">Confirm password</label>
+        <input type="password" id="signupConfirm" name="confirm" required autocomplete="new-password" minlength="8" />
+      </div>
+      <button type="submit" class="btn btn-primary" id="signupSubmit">Create account</button>
+      <div class="divider">or</div>
+      <a href="/api/auth/google" class="btn btn-google">
+        <svg width="16" height="16" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.9c1.7-1.57 2.7-3.88 2.7-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.98v2.33A9 9 0 009 18z"/><path fill="#FBBC05" d="M3.95 10.7A5.4 5.4 0 013.68 9c0-.59.1-1.16.27-1.7V4.97H.98A9 9 0 000 9c0 1.45.35 2.83.98 4.03l2.97-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 00.98 4.97L3.95 7.3C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
+        Continue with Google
+      </a>
+    </form>
+
+    <p class="reassure">Your email is only used to save your projects and manage your free clips. No spam, and we won't sell your data.</p>
+  </div>
+</main>
+
+<script>
+  const tabLogin = document.getElementById('tabLogin');
+  const tabSignup = document.getElementById('tabSignup');
+  const loginForm = document.getElementById('loginForm');
+  const signupForm = document.getElementById('signupForm');
+  const heading = document.getElementById('formHeading');
+  const errorBox = document.getElementById('errorBox');
+
+  function setMode(mode) {
+    const isLogin = mode === 'login';
+    tabLogin.classList.toggle('active', isLogin);
+    tabSignup.classList.toggle('active', !isLogin);
+    loginForm.classList.toggle('hidden', !isLogin);
+    signupForm.classList.toggle('hidden', isLogin);
+    heading.textContent = isLogin ? 'Log in to CLPZ' : 'Create your account';
+    errorBox.classList.remove('show');
+    history.replaceState(null, '', `auth.html?mode=${mode}`);
+  }
+
+  tabLogin.addEventListener('click', () => setMode('login'));
+  tabSignup.addEventListener('click', () => setMode('signup'));
+
+  const params = new URLSearchParams(location.search);
+  setMode(params.get('mode') === 'login' ? 'login' : 'signup');
+
+  function showError(msg) {
+    errorBox.textContent = msg;
+    errorBox.classList.add('show');
+  }
+
+  // Where to send an authenticated user. Point this at your real
+  // dashboard route once it exists — using clpz.html for now since
+  // that's the existing authenticated app shell.
+  const APP_ROUTE = '/app';
+
+  async function submitAuth(url, payload, submitBtn, busyLabel, idleLabel) {
+    errorBox.classList.remove('show');
+    submitBtn.disabled = true;
+    submitBtn.textContent = busyLabel;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        let message = 'Something specific went wrong — check your details and try again.';
+        try {
+          const data = await res.json();
+          if (data && (data.detail || data.message)) message = data.detail || data.message;
+        } catch (_) { /* non-JSON error body */ }
+        if (res.status === 401 || res.status === 400) {
+          message = url.includes('login')
+            ? "That email and password don't match."
+            : message;
+        }
+        showError(message);
+        return;
+      }
+      window.location.href = APP_ROUTE;
+    } catch (err) {
+      showError("Couldn't reach the server. Check your connection and try again.");
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = idleLabel;
+    }
+  }
+
+  loginForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    submitAuth('/api/auth/login', { email, password }, document.getElementById('loginSubmit'), 'Logging in…', 'Log in');
+  });
+
+  signupForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const email = document.getElementById('signupEmail').value.trim();
+    const password = document.getElementById('signupPassword').value;
+    const confirm = document.getElementById('signupConfirm').value;
+    if (password !== confirm) {
+      showError("Those passwords don't match.");
+      return;
+    }
+    if (password.length < 8) {
+      showError('Password needs to be at least 8 characters.');
+      return;
+    }
+    submitAuth('/api/auth/signup', { email, password }, document.getElementById('signupSubmit'), 'Creating account…', 'Create account');
+  });
+
+  document.getElementById('forgotLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    showError('Password reset isn\'t built yet — for now, reach out to support directly.');
+  });
+</script>
+</body>
+</html>

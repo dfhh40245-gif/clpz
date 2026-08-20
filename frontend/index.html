@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CLPZ — Turn long videos into clips worth posting</title>
+<meta name="description" content="CLPZ finds the moments in your video that hold up on their own, then captions, reframes, and hands you a real editor to finish the clip." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* Monitor Black — background system, grounded in a neutral reference-monitor gray so footage colors in the product never look tinted */
+    --bg:#121214;
+    --panel:#19191c;
+    --panel-raised:#212125;
+    --border:rgba(255,255,255,.08);
+    --border-strong:rgba(255,255,255,.15);
+
+    /* Reference White — text hierarchy */
+    --ink:#f2f1ec;
+    --ink-dim:#a3a29d;
+    --ink-faint:#68675f;
+
+    /* Cue Amber — the single accent, doubling as the caption-highlight color used inside the product itself */
+    --accent:#efa93a;
+    --accent-ink:#211203;
+    --accent-soft:rgba(239,169,58,.13);
+
+    --r-sm:6px; --r-md:10px; --r-lg:16px; --r-xl:22px;
+    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s8:32px;
+    --s10:40px; --s12:48px; --s16:64px; --s20:80px; --s24:96px; --s32:128px;
+
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-display: "Bricolage Grotesque", var(--font-ui);
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Consolas, monospace;
+
+    --container: 1180px;
+  }
+
+  *,*::before,*::after{ box-sizing:border-box; }
+  html{ scroll-behavior:smooth; }
+  @media (prefers-reduced-motion: reduce){
+    html{ scroll-behavior:auto; }
+    *{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+  }
+
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:var(--font-ui); font-size:16px; line-height:1.55;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  h1,h2,h3{ margin:0; font-weight:600; letter-spacing:-0.02em; }
+  p{ margin:0; }
+  a{ color:inherit; text-decoration:none; }
+  button{ font:inherit; color:inherit; background:none; border:0; cursor:pointer; }
+  ul{ margin:0; padding:0; list-style:none; }
+
+  .wrap{ max-width:var(--container); margin:0 auto; padding-inline:var(--s6); }
+  .mono{ font-family:var(--font-mono); font-variant-numeric:tabular-nums; }
+  .eyebrow{
+    font-size:12.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--accent); margin-bottom:var(--s3);
+  }
+  .visually-hidden{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+
+  :focus-visible{ outline:2px solid var(--accent); outline-offset:3px; border-radius:4px; }
+
+  /* ---------- buttons ---------- */
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:var(--s2);
+    height:44px; padding-inline:var(--s5); border-radius:var(--r-md);
+    font-size:14.5px; font-weight:600; white-space:nowrap;
+    transition:transform .12s ease, background-color .12s ease, border-color .12s ease;
+  }
+  .btn:active{ transform:translateY(1px); }
+  .btn-primary{ background:var(--accent); color:var(--accent-ink); box-shadow:0 0 20px rgba(239,169,58,.2); }
+  .btn-primary:hover{ background:#f4b654; box-shadow:0 0 28px rgba(239,169,58,.3); transform:translateY(-1px); }
+  .btn-ghost{ border:1px solid var(--border-strong); color:var(--ink); }
+  .btn-ghost:hover{ border-color:var(--ink-dim); }
+  .btn-text{ color:var(--ink-dim); font-size:14.5px; font-weight:600; }
+  .btn-text:hover{ color:var(--ink); }
+  .btn-sm{ height:36px; padding-inline:var(--s4); font-size:13.5px; }
+
+  /* ---------- nav ---------- */
+  .nav{
+    position:sticky; top:0; z-index:50;
+    background:rgba(18,18,20,0);
+    border-bottom:1px solid transparent;
+    transition:background-color .2s ease, border-color .2s ease;
+  }
+  .nav.is-scrolled{ background:rgba(18,18,20,.86); backdrop-filter:blur(10px); border-color:var(--border); }
+  .nav-row{ height:64px; display:flex; align-items:center; justify-content:space-between; }
+  .logo{ font-family:var(--font-display); font-weight:700; font-size:20px; letter-spacing:-0.01em; }
+  .nav-links{ display:flex; align-items:center; gap:var(--s8); }
+  .nav-links a{ font-size:14px; color:var(--ink-dim); font-weight:500; }
+  .nav-links a:hover{ color:var(--ink); }
+  .nav-auth{ display:flex; align-items:center; gap:var(--s3); }
+  .nav-toggle{ display:none; width:36px; height:36px; align-items:center; justify-content:center; }
+  .nav-toggle span, .nav-toggle::before, .nav-toggle::after{
+    content:""; display:block; width:18px; height:1.5px; background:var(--ink); position:relative;
+  }
+  .nav-toggle span{ position:relative; }
+  .nav-toggle::before{ position:absolute; transform:translateY(-6px); }
+  .nav-toggle::after{ position:absolute; transform:translateY(6px); }
+
+  .mobile-menu{ display:none; }
+
+  /* ---------- hero ---------- */
+  .hero{ padding-top:var(--s20); padding-bottom:var(--s16); }
+  .hero-copy{ max-width:640px; }
+  .hero h1{
+    font-family:var(--font-display); font-size:52px; line-height:1.06; letter-spacing:-0.025em;
+    background:linear-gradient(135deg, var(--ink) 0%, var(--ink-dim) 100%);
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    background-clip:text;
+  }
+  .hero-sub{
+    margin-top:var(--s5); font-size:18px; line-height:1.6; color:var(--ink-dim); max-width:520px;
+  }
+  .hero-cta{ margin-top:var(--s8); display:flex; align-items:center; gap:var(--s5); flex-wrap:wrap; }
+  .hero-trust{ margin-top:var(--s5); font-size:13px; color:var(--ink-faint); }
+
+  /* ---------- signature: extraction strip ---------- */
+  .extract{
+    margin-top:var(--s16); border:1px solid var(--border); background:linear-gradient(145deg, var(--panel) 0%, rgba(25,25,28,.6) 100%);
+    border-radius:var(--r-xl); padding:var(--s8) var(--s8) var(--s6);
+    position:relative; overflow:hidden;
+    box-shadow:0 8px 40px rgba(0,0,0,.4), inset 0 1px rgba(255,255,255,.03);
+  }
+  .extract-label{
+    display:flex; justify-content:space-between; align-items:baseline;
+    font-size:12px; color:var(--ink-faint); margin-bottom:var(--s6);
+  }
+  .extract-body{ display:flex; gap:var(--s10); align-items:center; }
+  .extract-strip-col{ flex:1; min-width:0; }
+  .strip{
+    display:flex; align-items:flex-end; gap:3px; height:96px; position:relative;
+  }
+  .strip .bar{ flex:1; background:var(--border-strong); border-radius:2px 2px 0 0; min-width:2px; }
+  .strip .bar.active{ background:var(--accent); }
+  .strip-marks{ display:flex; justify-content:space-between; margin-top:var(--s3); }
+  .strip-marks span{ font-size:11px; color:var(--ink-faint); }
+  .strip-bracket{
+    margin-top:var(--s3); height:22px; border:1px solid var(--accent); border-top:0;
+    border-radius:0 0 8px 8px; position:relative; opacity:.85;
+  }
+  .strip-bracket span{
+    position:absolute; left:50%; top:100%; transform:translate(-50%,4px);
+    font-size:11.5px; color:var(--accent); white-space:nowrap; font-weight:600;
+  }
+  .extract-arrow{ color:var(--ink-faint); flex-shrink:0; }
+  .phone{
+    width:172px; flex-shrink:0; aspect-ratio:9/16; border-radius:18px; overflow:hidden;
+    background:linear-gradient(160deg,#2a2723,#141311 65%); border:1px solid var(--border-strong);
+    position:relative;
+    box-shadow:0 12px 40px rgba(0,0,0,.5), 0 0 0 1px rgba(239,169,58,.08);
+  }
+  .phone-score{
+    position:absolute; top:10px; right:10px; background:var(--accent-soft); border:1px solid rgba(239,169,58,.35);
+    color:var(--accent); font-size:11px; font-weight:700; padding:3px 7px; border-radius:20px;
+    backdrop-filter:blur(8px);
+  }
+  .phone-caption{
+    position:absolute; bottom:34px; left:10px; right:10px; text-align:center;
+    font-size:14px; font-weight:700; line-height:1.35; color:#f2f1ec;
+  }
+  .phone-caption b{ color:var(--accent-ink); background:var(--accent); padding:1px 5px; border-radius:4px; }
+  .phone-time{
+    position:absolute; bottom:12px; left:10px; right:10px; display:flex; justify-content:space-between;
+    font-size:10.5px; color:rgba(242,241,236,.55);
+  }
+
+  @media (max-width:760px){
+    .extract-body{ flex-direction:column; }
+    .extract-arrow{ transform:rotate(90deg); }
+    .phone{ width:150px; }
+  }
+
+  /* ---------- generic section rhythm ---------- */
+  .section{ padding-block:var(--s24); border-top:1px solid var(--border); }
+  .section-head{ max-width:640px; }
+  .section-head h2{ font-family:var(--font-display); font-size:34px; letter-spacing:-0.02em; }
+  .section-head p{ margin-top:var(--s4); font-size:16.5px; color:var(--ink-dim); line-height:1.65; }
+  .reveal{ opacity:0; transform:translateY(18px); transition:opacity .6s cubic-bezier(.22,1,.36,1), transform .6s cubic-bezier(.22,1,.36,1); }
+  .reveal.in{ opacity:1; transform:none; }
+
+  /* ---------- workflow ---------- */
+  .workflow-grid{
+    margin-top:var(--s12); display:grid; grid-template-columns:repeat(4,1fr); gap:var(--s6);
+  }
+  .workflow-step .num{
+    font-family:var(--font-mono); font-size:13px; color:var(--accent); margin-bottom:var(--s4);
+  }
+  .workflow-step h3{ font-size:16.5px; font-weight:600; }
+  .workflow-step p{ margin-top:var(--s2); font-size:14.5px; color:var(--ink-dim); line-height:1.6; }
+  .workflow-step{ padding-top:var(--s5); border-top:1px solid var(--border); }
+
+  /* ---------- two-col feature rows ---------- */
+  .feature-row{
+    margin-top:var(--s12); display:grid; grid-template-columns:0.85fr 1.15fr; gap:var(--s16); align-items:center;
+  }
+  .feature-row.reverse{ grid-template-columns:1.15fr 0.85fr; }
+  .feature-row.reverse .feature-visual{ order:-1; }
+  .tag-list{ margin-top:var(--s6); display:flex; flex-wrap:wrap; gap:var(--s2); }
+  .tag{
+    font-size:13px; color:var(--ink-dim); border:1px solid var(--border); padding:6px 11px; border-radius:20px;
+  }
+  .cap-list{ margin-top:var(--s6); display:flex; flex-direction:column; gap:var(--s3); }
+  .cap-list li{
+    display:flex; align-items:center; gap:var(--s3); font-size:14.5px; color:var(--ink-dim);
+  }
+  .cap-list li::before{
+    content:""; width:5px; height:5px; border-radius:50%; background:var(--accent); flex-shrink:0;
+  }
+
+  /* moment score card */
+  .score-card{
+    background:linear-gradient(145deg, var(--panel) 0%, rgba(25,25,28,.5) 100%); border:1px solid var(--border); border-radius:var(--r-lg); padding:var(--s6);
+    box-shadow:0 4px 24px rgba(0,0,0,.3);
+  }
+  .score-card-top{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:var(--s5); }
+  .score-card-top .clip-title{ font-size:14.5px; font-weight:600; }
+  .score-card-top .clip-time{ font-size:12px; color:var(--ink-faint); margin-top:2px; }
+  .score-overall{ font-family:var(--font-mono); font-size:22px; font-weight:600; color:var(--accent); }
+  .score-row{ display:flex; align-items:center; gap:var(--s3); margin-top:var(--s3); }
+  .score-row .label{ width:108px; font-size:12.5px; color:var(--ink-dim); flex-shrink:0; }
+  .score-row .bar{ flex:1; height:5px; background:var(--panel-raised); border-radius:3px; overflow:hidden; }
+  .score-row .bar i{ display:block; height:100%; background:var(--accent); border-radius:3px; }
+  .score-row .val{ width:30px; text-align:right; font-family:var(--font-mono); font-size:12px; color:var(--ink-dim); }
+  .score-note{ margin-top:var(--s5); font-size:12.5px; color:var(--ink-faint); }
+
+  /* editor mock */
+  .editor-mock{
+    background:linear-gradient(145deg, var(--panel) 0%, rgba(25,25,28,.5) 100%); border:1px solid var(--border); border-radius:var(--r-lg); overflow:hidden;
+    box-shadow:0 4px 24px rgba(0,0,0,.3);
+  }
+  .editor-toolbar{ display:flex; border-bottom:1px solid var(--border); }
+  .editor-tool{
+    flex:1; padding:var(--s4) var(--s2); text-align:center; border-right:1px solid var(--border);
+    font-size:11px; color:var(--ink-faint);
+  }
+  .editor-tool:last-child{ border-right:0; }
+  .editor-tool .ico{ width:16px; height:16px; margin:0 auto 6px; border:1.4px solid var(--ink-faint); border-radius:3px; }
+  .editor-tool.active{ color:var(--accent); background:var(--accent-soft); }
+  .editor-tool.active .ico{ border-color:var(--accent); }
+  .editor-canvas{
+    aspect-ratio:16/8.2; background:linear-gradient(160deg,#252220,#141311 70%);
+    display:flex; align-items:center; justify-content:center; position:relative;
+  }
+  .editor-canvas .frame{ width:38%; aspect-ratio:9/16; border:1px solid var(--border-strong); border-radius:10px; background:rgba(0,0,0,.25); }
+  .editor-tracks{ padding:var(--s4); display:flex; flex-direction:column; gap:6px; }
+  .track{ display:flex; align-items:center; gap:var(--s3); }
+  .track .track-label{ width:58px; font-size:10.5px; color:var(--ink-faint); flex-shrink:0; }
+  .track .track-lane{ flex:1; height:16px; background:var(--panel-raised); border-radius:4px; position:relative; overflow:hidden; }
+  .track .clip-block{ position:absolute; top:0; bottom:0; background:var(--border-strong); border-radius:4px; }
+  .track.captions .clip-block{ background:var(--accent-soft); border:1px solid rgba(239,169,58,.4); }
+  .playhead{ position:absolute; top:-2px; bottom:-2px; width:1.5px; background:var(--accent); }
+
+  /* captions phone (reused component, larger) */
+  .phone-lg{ width:220px; }
+
+  /* hooks */
+  .hook-pair{ margin-top:var(--s10); display:grid; grid-template-columns:1fr 1fr; gap:var(--s5); max-width:760px; }
+  .hook-card{ background:linear-gradient(145deg, var(--panel) 0%, rgba(25,25,28,.5) 100%); border:1px solid var(--border); border-radius:var(--r-lg); padding:var(--s6); transition:border-color .2s ease, box-shadow .2s ease; }
+  .hook-card:hover{ border-color:var(--border-strong); box-shadow:0 4px 20px rgba(0,0,0,.2); }
+  .hook-card .k{ font-size:11.5px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint); }
+  .hook-card.after .k{ color:var(--accent); }
+  .hook-card p{ margin-top:var(--s3); font-size:15.5px; line-height:1.55; }
+  .hook-card.after{ border-color:rgba(239,169,58,.35); box-shadow:0 0 24px rgba(239,169,58,.08); }
+  .hook-card.after:hover{ box-shadow:0 0 32px rgba(239,169,58,.12); }
+
+  /* batch grid */
+  .batch-grid{ margin-top:var(--s10); display:grid; grid-template-columns:repeat(4,1fr); gap:var(--s4); }
+  .batch-card{ background:var(--panel); border:1px solid var(--border); border-radius:var(--r-md); padding:var(--s4); }
+  .batch-thumb{ aspect-ratio:9/16; border-radius:6px; background:linear-gradient(150deg,#242220,#141311 75%); margin-bottom:var(--s3); position:relative; }
+  .batch-stage{ font-size:11.5px; font-weight:600; }
+  .batch-stage.done{ color:var(--accent); }
+  .batch-stage.working::after{
+    content:""; display:inline-block; width:5px; height:5px; border-radius:50%; background:var(--ink-dim);
+    margin-left:6px; animation:pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse{ 0%,100%{opacity:.25;} 50%{opacity:1;} }
+  .batch-time{ font-family:var(--font-mono); font-size:11px; color:var(--ink-faint); margin-top:3px; }
+
+  /* pricing */
+  .pricing-card{
+    margin-top:var(--s10); background:linear-gradient(145deg, var(--panel) 0%, rgba(25,25,28,.5) 100%); border:1px solid var(--border); border-radius:var(--r-xl);
+    padding:var(--s10); display:flex; justify-content:space-between; align-items:center; gap:var(--s8);
+    max-width:820px; box-shadow:0 8px 40px rgba(0,0,0,.3);
+  }
+  .pricing-main .amount{ font-family:var(--font-display); font-size:40px; font-weight:600; }
+  .pricing-main .amount span{ font-size:16px; font-weight:500; color:var(--ink-dim); }
+  .pricing-main p{ margin-top:var(--s2); color:var(--ink-dim); font-size:14.5px; }
+  .pricing-extra{
+    border-top:1px solid var(--border); margin-top:var(--s8); padding-top:var(--s6);
+    display:flex; justify-content:space-between; align-items:center; max-width:820px;
+  }
+  .pricing-extra .label{ font-size:14.5px; color:var(--ink-dim); }
+  .pricing-extra .amount-sm{ font-family:var(--font-mono); font-size:15px; }
+  .pricing-note{ margin-top:var(--s4); font-size:13px; color:var(--ink-faint); }
+
+  /* closing cta */
+  .cta-band{ padding-block:var(--s16); text-align:center; border-top:1px solid var(--border); }
+  .cta-band h2{ font-family:var(--font-display); font-size:28px; }
+  .cta-band .btn{ margin-top:var(--s6); }
+
+  /* footer */
+  footer{ border-top:1px solid var(--border); padding-block:var(--s8); }
+  .footer-row{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:var(--s4); }
+  .footer-links{ display:flex; gap:var(--s6); }
+  .footer-links a{ font-size:13px; color:var(--ink-faint); }
+  .footer-links a:hover{ color:var(--ink-dim); }
+  footer .fine{ font-size:12.5px; color:var(--ink-faint); }
+
+  /* ---------- responsive ---------- */
+  @media (max-width:980px){
+    .feature-row, .feature-row.reverse{ grid-template-columns:1fr; gap:var(--s8); }
+    .feature-row.reverse .feature-visual{ order:0; }
+    .workflow-grid{ grid-template-columns:repeat(2,1fr); }
+    .batch-grid{ grid-template-columns:repeat(2,1fr); }
+    .pricing-card{ flex-direction:column; align-items:flex-start; }
+  }
+  @media (max-width:640px){
+    .nav-links{ display:none; }
+    .nav-toggle{ display:flex; }
+    .nav-auth .btn-text{ display:none; }
+    .hero h1{ font-size:36px; }
+    .hero-sub{ font-size:16px; }
+    .section-head h2{ font-size:26px; }
+    .workflow-grid{ grid-template-columns:1fr; }
+    .batch-grid{ grid-template-columns:1fr 1fr; }
+    .hook-pair{ grid-template-columns:1fr; }
+    .extract{ padding:var(--s5); }
+    .mobile-menu.open{
+      display:flex; flex-direction:column; gap:var(--s1); padding:var(--s4) var(--s6) var(--s5);
+      border-bottom:1px solid var(--border); background:var(--bg);
+    }
+    .mobile-menu a{ padding:var(--s3) 0; font-size:15px; color:var(--ink-dim); border-bottom:1px solid var(--border); }
+    .mobile-menu .btn{ margin-top:var(--s3); }
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav" id="nav">
+  <div class="wrap nav-row">
+    <a href="index.html" class="logo">CLPZ</a>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#how-it-works">How it Works</a>
+      <a href="#editor">Editor</a>
+      <a href="#pricing">Pricing</a>
+    </div>
+    <div class="nav-auth">
+      <a href="auth.html?mode=login" class="btn-text">Log in</a>
+      <a href="auth.html?mode=signup" class="btn btn-ghost btn-sm">Sign up</a>
+    </div>
+    <button class="nav-toggle" id="navToggle" aria-label="Open menu" aria-expanded="false"><span></span></button>
+  </div>
+  <div class="mobile-menu" id="mobileMenu">
+    <a href="#features">Features</a>
+    <a href="#how-it-works">How it Works</a>
+    <a href="#editor">Editor</a>
+    <a href="#pricing">Pricing</a>
+    <a href="auth.html?mode=login">Log in</a>
+    <a href="auth.html?mode=signup" class="btn btn-primary">Sign up</a>
+  </div>
+</nav>
+
+<header class="hero wrap">
+  <div class="hero-copy">
+    <h1>Turn long videos into clips worth posting.</h1>
+    <p class="hero-sub">CLPZ watches the full video, finds the moments that hold up on their own, and turns them into captioned, reframed clips — ready to edit and post.</p>
+    <div class="hero-cta">
+      <a href="auth.html?mode=signup" class="btn btn-primary">Try CLPZ</a>
+      <a href="#how-it-works" class="btn btn-ghost">See how it works</a>
+    </div>
+    <p class="hero-trust">10 free clips to start. No credit card.</p>
+  </div>
+
+  <div class="extract">
+    <div class="extract-label">
+      <span>Podcast_Episode_42.mp4 · 1:12:08</span>
+      <span class="mono">Moment found at 24:41</span>
+    </div>
+    <div class="extract-body">
+      <div class="extract-strip-col">
+        <div class="strip" id="strip" aria-hidden="true"></div>
+        <div class="strip-bracket" style="margin-left:38%; width:22%;">
+          <span>24:41 – 25:23</span>
+        </div>
+        <div class="strip-marks">
+          <span>00:00</span><span>18:00</span><span>36:00</span><span>54:00</span><span>1:12:08</span>
+        </div>
+      </div>
+      <svg class="extract-arrow" width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M4 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div class="phone">
+        <span class="phone-score">9.4</span>
+        <p class="phone-caption">the moment <b>everything</b> clicked</p>
+        <div class="phone-time"><span class="mono">0:11</span><span class="mono">0:42</span></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section class="section" id="how-it-works">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow">How it works</div>
+      <h2>From long video to finished short, without leaving the app.</h2>
+    </div>
+    <div class="workflow-grid reveal">
+      <div class="workflow-step">
+        <div class="num mono">01</div>
+        <h3>Upload or paste a link</h3>
+        <p>Drop in a file or paste a YouTube URL. CLPZ handles the rest.</p>
+      </div>
+      <div class="workflow-step">
+        <div class="num mono">02</div>
+        <h3>Find the moments</h3>
+        <p>CLPZ reads the whole video for parts that stand on their own.</p>
+      </div>
+      <div class="workflow-step">
+        <div class="num mono">03</div>
+        <h3>Edit</h3>
+        <p>Trim, caption, reframe, and adjust — all in one editor.</p>
+      </div>
+      <div class="workflow-step">
+        <div class="num mono">04</div>
+        <h3>Export</h3>
+        <p>Download a clip that's ready to post, sized right for the platform.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="features">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow">Moment detection</div>
+      <h2>It's not just finding sentences.</h2>
+      <p>Most auto-clip tools cut on silence or keywords. CLPZ reads for context — whether a moment makes sense without the rest of the video, whether it has a real hook and a payoff, and whether it holds together as its own short story.</p>
+    </div>
+    <div class="feature-row reveal">
+      <div>
+        <div class="tag-list">
+          <span class="tag">Context</span>
+          <span class="tag">Completeness</span>
+          <span class="tag">Hook strength</span>
+          <span class="tag">Payoff</span>
+          <span class="tag">Emotional intensity</span>
+          <span class="tag">Narrative coherence</span>
+          <span class="tag">Standalone understanding</span>
+        </div>
+      </div>
+      <div class="feature-visual">
+        <div class="score-card">
+          <div class="score-card-top">
+            <div>
+              <div class="clip-title">"the moment everything clicked"</div>
+              <div class="clip-time mono">24:41 – 25:23 · 0:42</div>
+            </div>
+            <div class="score-overall">9.4</div>
+          </div>
+          <div class="score-row"><span class="label">Hook</span><div class="bar"><i style="width:88%"></i></div><span class="val mono">8.8</span></div>
+          <div class="score-row"><span class="label">Context</span><div class="bar"><i style="width:94%"></i></div><span class="val mono">9.4</span></div>
+          <div class="score-row"><span class="label">Completeness</span><div class="bar"><i style="width:97%"></i></div><span class="val mono">9.7</span></div>
+          <div class="score-row"><span class="label">Payoff</span><div class="bar"><i style="width:91%"></i></div><span class="val mono">9.1</span></div>
+          <div class="score-note">Example score shown for illustration.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="editor">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow">Editor</div>
+      <h2>Finish the clip without opening another app.</h2>
+      <p>Every clip opens straight into a real editor — trim and split, adjust captions, add text and overlays, tweak audio and speed, fix the crop. Undo and redo like you'd expect.</p>
+    </div>
+    <div class="feature-row reveal">
+      <div class="feature-visual editor-mock">
+        <div class="editor-toolbar">
+          <div class="editor-tool active"><div class="ico"></div>Trim</div>
+          <div class="editor-tool"><div class="ico"></div>Split</div>
+          <div class="editor-tool"><div class="ico"></div>Text</div>
+          <div class="editor-tool"><div class="ico"></div>Audio</div>
+          <div class="editor-tool"><div class="ico"></div>Crop</div>
+          <div class="editor-tool"><div class="ico"></div>Speed</div>
+        </div>
+        <div class="editor-canvas"><div class="frame"></div></div>
+        <div class="editor-tracks">
+          <div class="track"><span class="track-label">Video</span><div class="track-lane"><div class="clip-block" style="left:0;right:0;background:var(--border-strong)"></div><div class="playhead" style="left:38%"></div></div></div>
+          <div class="track captions"><span class="track-label">Captions</span><div class="track-lane"><div class="clip-block" style="left:6%;right:10%"></div><div class="playhead" style="left:38%"></div></div></div>
+          <div class="track"><span class="track-label">Text</span><div class="track-lane"><div class="clip-block" style="left:14%;right:60%"></div><div class="playhead" style="left:38%"></div></div></div>
+          <div class="track"><span class="track-label">Audio</span><div class="track-lane"><div class="clip-block" style="left:0;right:0;background:var(--border-strong);opacity:.6"></div><div class="playhead" style="left:38%"></div></div></div>
+        </div>
+      </div>
+      <div>
+        <ul class="cap-list">
+          <li>Trim &amp; split on the timeline</li>
+          <li>Word-level caption editing</li>
+          <li>Text, overlays &amp; positioning</li>
+          <li>Audio levels &amp; playback speed</li>
+          <li>Crop &amp; reframe for 9:16</li>
+          <li>Undo / redo, always</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow">Captions &amp; reframing</div>
+      <h2>Built for vertical, by default.</h2>
+      <p>CLPZ reframes every clip for 9:16 and adds clean, word-timed captions — sized and positioned to stay inside the safe area on every platform.</p>
+    </div>
+    <div class="feature-row reverse reveal">
+      <div class="feature-visual" style="display:flex; justify-content:center;">
+        <div class="phone phone-lg">
+          <span class="phone-score">9.1</span>
+          <p class="phone-caption" style="font-size:17px;">nobody tells you this <b>before</b> you start</p>
+          <div class="phone-time"><span class="mono">0:03</span><span class="mono">0:29</span></div>
+        </div>
+      </div>
+      <div>
+        <ul class="cap-list">
+          <li>Word-by-word timing, carried over exactly</li>
+          <li>Safe-area positioning for every platform</li>
+          <li>Font, size, emphasis &amp; animation, all editable</li>
+          <li>What you preview is what gets exported</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow">Hooks</div>
+      <h2>A stronger opening, without changing what was said.</h2>
+      <p>CLPZ can suggest a sharper opening line pulled from the same clip — never invented, never out of context. Preview it, apply it, or undo it.</p>
+    </div>
+    <div class="hook-pair reveal">
+      <div class="hook-card">
+        <div class="k">Original opening</div>
+        <p>"So, today I kind of wanted to talk about what happened during that first year…"</p>
+      </div>
+      <div class="hook-card after">
+        <div class="k">Suggested hook</div>
+        <p>"Nobody tells you this before you start — and it changed everything."</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow">Batch</div>
+      <h2>Process a full episode at once.</h2>
+      <p>Drop in one long video and CLPZ works through it end to end, showing exactly which stage each clip is in — never a fake percentage.</p>
+    </div>
+    <div class="batch-grid reveal">
+      <div class="batch-card">
+        <div class="batch-thumb"></div>
+        <div class="batch-stage done">✓ Complete</div>
+        <div class="batch-time">0:58</div>
+      </div>
+      <div class="batch-card">
+        <div class="batch-thumb"></div>
+        <div class="batch-stage done">✓ Complete</div>
+        <div class="batch-time">1:04</div>
+      </div>
+      <div class="batch-card">
+        <div class="batch-thumb"></div>
+        <div class="batch-stage working">Rendering</div>
+        <div class="batch-time">0:41</div>
+      </div>
+      <div class="batch-card">
+        <div class="batch-thumb"></div>
+        <div class="batch-stage working">Transcribing</div>
+        <div class="batch-time">0:12</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="pricing">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow">Pricing</div>
+      <h2>Start free. Pay only if you need more.</h2>
+    </div>
+    <div class="reveal">
+      <div class="pricing-card">
+        <div class="pricing-main">
+          <div class="amount">10 <span>free clips</span></div>
+          <p>Every account starts with 10 uses. No trial period, no card required.</p>
+        </div>
+        <a href="auth.html?mode=signup" class="btn btn-primary">Try CLPZ</a>
+      </div>
+      <div class="pricing-extra" style="max-width:820px;">
+        <span class="label">Need more?</span>
+        <span class="amount-sm mono">$2.50 — 10 clips</span>
+      </div>
+      <p class="pricing-note">No subscription. Usage is tracked server-side, so it's always accurate.</p>
+    </div>
+  </div>
+</section>
+
+<section class="cta-band">
+  <div class="wrap">
+    <h2>Your next clip is one upload away.</h2>
+    <a href="auth.html?mode=signup" class="btn btn-primary">Try CLPZ</a>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap footer-row">
+    <div>
+      <div class="logo" style="font-size:16px;">CLPZ</div>
+      <p class="fine" style="margin-top:4px;">Long video in. Short clips out.</p>
+    </div>
+    <div class="footer-links">
+      <a href="#features">Features</a>
+      <a href="#editor">Editor</a>
+      <a href="#pricing">Pricing</a>
+      <a href="auth.html?mode=login">Log in</a>
+    </div>
+    <div class="fine">© 2026 CLPZ</div>
+  </div>
+</footer>
+
+<script>
+  // nav scroll state
+  const nav = document.getElementById('nav');
+  const onScroll = () => nav.classList.toggle('is-scrolled', window.scrollY > 12);
+  document.addEventListener('scroll', onScroll, { passive:true });
+  onScroll();
+
+  // mobile menu
+  const navToggle = document.getElementById('navToggle');
+  const mobileMenu = document.getElementById('mobileMenu');
+  navToggle.addEventListener('click', () => {
+    const open = mobileMenu.classList.toggle('open');
+    navToggle.setAttribute('aria-expanded', String(open));
+  });
+  mobileMenu.querySelectorAll('a').forEach(a => a.addEventListener('click', () => {
+    mobileMenu.classList.remove('open');
+    navToggle.setAttribute('aria-expanded', 'false');
+  }));
+
+  // build the waveform strip deterministically (no layout thrash, no fake randomness on reload)
+  const strip = document.getElementById('strip');
+  const BARS = 72;
+  const ACTIVE_START = 27, ACTIVE_END = 34;
+  for (let i = 0; i < BARS; i++) {
+    const bar = document.createElement('div');
+    const h = 18 + Math.abs(Math.sin(i * 0.45)) * 60 + Math.abs(Math.sin(i * 1.7)) * 18;
+    bar.className = 'bar' + (i >= ACTIVE_START && i <= ACTIVE_END ? ' active' : '');
+    bar.style.height = Math.min(96, h) + 'px';
+    strip.appendChild(bar);
+  }
+
+  // scroll reveal
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+  }, { threshold:.15 });
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+</script>
+</body>
+</html>
