@@ -1,10 +1,6 @@
 {
   "version": 2,
   "outputDirectory": "frontend",
-  "rewrites": [
-    { "source": "/app", "destination": "/clpz.html" },
-    { "source": "/dashboard", "destination": "/clpz.html" }
-  ],
   "headers": [
     {
       "source": "/(.*)",
