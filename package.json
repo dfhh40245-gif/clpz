@@ -1,7 +1,7 @@
 {
   "name": "clpz",
   "private": true,
-  "scripts": {
-    "build": "node scripts/inject-env.js"
+  "engines": {
+    "node": ">=18"
   }
 }
