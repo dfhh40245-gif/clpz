@@ -1,11 +1,9 @@
 {
   "version": 2,
   "outputDirectory": "frontend",
-  "routes": [
-    { "src": "^/auth.html$", "dest": "/auth.html" },
-    { "src": "^/app$", "dest": "/clpz.html" },
-    { "src": "^/dashboard$", "dest": "/clpz.html" },
-    { "src": "/(.*)", "dest": "/$1" }
+  "rewrites": [
+    { "source": "/app", "destination": "/clpz.html" },
+    { "source": "/dashboard", "destination": "/clpz.html" }
   ],
   "headers": [
     {
