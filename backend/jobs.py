@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import config
+import credits as credits_mod
 from pipeline import (
     analyzer,
     captions,
@@ -684,6 +685,18 @@ def _run_pipeline(job_id: str):
         }
         terminal_ts = {k: v for k, v in terminal_ts.items() if v is not None}
         _update(job_id, stage=stage, error=str(e), error_code=error_code, **terminal_ts)
+
+        # Refund credits on failure (not on cancellation — user chose that)
+        if not is_cancelled and job.get("user_id"):
+            try:
+                credits_mod.refund(
+                    job["user_id"],
+                    credits_mod.COST_PER_FORGE,
+                    related_id=job_id,
+                    reason=f"Pipeline failed ({error_code}) — refund",
+                )
+            except Exception:
+                pass  # Best-effort; log but don't crash
 
 
 def clip_path(job_id: str, index: int) -> Path | None:

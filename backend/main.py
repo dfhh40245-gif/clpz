@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 import auth as auth_mod
 import config
+import credits as credits_mod
 import jobs
 
 _PASSWORD = os.getenv("CLIPFORGE_PASSWORD", "")
@@ -148,8 +149,10 @@ def signup(req: SignupRequest):
         user = auth_mod.create_user(req.email, req.password, req.display_name)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    # Grant signup bonus exactly once (server-authoritative)
+    credits_mod.ensure_signup_bonus(user["id"])
     token = auth_mod.create_session(user["id"])
-    resp = JSONResponse({"user": user})
+    resp = JSONResponse({"user": user, "credits": credits_mod.get_balance(user["id"])})
     resp.set_cookie("clpz_session", token, httponly=True, samesite="lax", max_age=86400 * 7)
     return resp
 
@@ -159,8 +162,11 @@ def login(req: LoginRequest):
     user = auth_mod.authenticate_user(req.email, req.password)
     if not user:
         raise HTTPException(401, "Invalid email or password.")
+    # Ensure signup bonus was granted (idempotent)
+    credits_mod.ensure_signup_bonus(user["id"])
+    balance = credits_mod.get_balance(user["id"])
     token = auth_mod.create_session(user["id"])
-    resp = JSONResponse({"user": user})
+    resp = JSONResponse({"user": user, "credits": balance})
     resp.set_cookie("clpz_session", token, httponly=True, samesite="lax", max_age=86400 * 7)
     return resp
 
@@ -180,6 +186,7 @@ def get_me(user_id: str = Depends(get_current_user)):
     user = auth_mod.get_user_by_id(user_id)
     if not user:
         raise HTTPException(404, "User not found.")
+    user["credits"] = credits_mod.get_balance(user_id)
     return {"user": user}
 
 
@@ -192,6 +199,20 @@ def reset_password(req: ResetRequest):
     if not ok:
         raise HTTPException(404, "No account found with that email.")
     return {"message": "Password reset successfully."}
+
+
+# ── Credit endpoints ─────────────────────────────────────────────
+
+@app.get("/api/credits/balance")
+def credit_balance(user_id: str = Depends(get_current_user)):
+    balance = credits_mod.get_balance(user_id)
+    return {"balance": balance, "cost_per_forge": credits_mod.COST_PER_FORGE}
+
+
+@app.get("/api/credits/transactions")
+def credit_transactions(user_id: str = Depends(get_current_user)):
+    txns = credits_mod.get_transactions(user_id)
+    return {"transactions": txns}
 
 
 class JobRequest(BaseModel):
@@ -263,20 +284,37 @@ def create_job(req: JobRequest, request: Request):
     if not user_id:
         user_id = _get_session_user(request)
 
-    job_id = jobs.create_job(
-        url,
-        req.max_clips,
-        req.top_text,
-        user_id=user_id,
-    )
-
-    # Consume a use if user is logged in
+    # Charge credits BEFORE creating the job (atomic check-and-deduct)
     if user_id:
-        remaining = auth_mod.consume_use(user_id)
-        if remaining < 0:
-            raise HTTPException(402, "No uses remaining. Please purchase more.")
+        ok, remaining = credits_mod.check_and_charge(
+            user_id, credits_mod.COST_PER_FORGE
+        )
+        if not ok:
+            raise HTTPException(
+                402,
+                f"Not enough credits. You need {credits_mod.COST_PER_FORGE} credit(s) "
+                f"but have {remaining}.",
+            )
+    else:
+        remaining = None
 
-    return {"job_id": job_id}
+    try:
+        job_id = jobs.create_job(
+            url,
+            req.max_clips,
+            req.top_text,
+            user_id=user_id,
+        )
+    except Exception:
+        # Refund if job creation failed after charge
+        if user_id and remaining is not None:
+            credits_mod.refund(
+                user_id, credits_mod.COST_PER_FORGE,
+                reason="Job creation failed — refund"
+            )
+        raise
+
+    return {"job_id": job_id, "credits_remaining": remaining}
 
 
 @app.get("/api/jobs")
@@ -327,18 +365,34 @@ async def upload_job(
 
     user_id = _get_session_user(request)
 
-    job_id = jobs.create_upload_job(
-        filename=file.filename,
-        max_clips=max_clips,
-        top_text=top_text,
-        user_id=user_id,
-    )
-
-    # Consume a use if user is logged in
+    # Charge credits BEFORE creating the job (atomic check-and-deduct)
     if user_id:
-        remaining = auth_mod.consume_use(user_id)
-        if remaining < 0:
-            raise HTTPException(402, "No uses remaining. Please purchase more.")
+        ok, remaining = credits_mod.check_and_charge(
+            user_id, credits_mod.COST_PER_FORGE
+        )
+        if not ok:
+            raise HTTPException(
+                402,
+                f"Not enough credits. You need {credits_mod.COST_PER_FORGE} credit(s) "
+                f"but have {remaining}.",
+            )
+    else:
+        remaining = None
+
+    try:
+        job_id = jobs.create_upload_job(
+            filename=file.filename,
+            max_clips=max_clips,
+            top_text=top_text,
+            user_id=user_id,
+        )
+    except Exception:
+        if user_id and remaining is not None:
+            credits_mod.refund(
+                user_id, credits_mod.COST_PER_FORGE,
+                reason="Upload job creation failed — refund"
+            )
+        raise
 
     job_dir = config.DATA_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
@@ -367,7 +421,7 @@ async def upload_job(
         file.filename,
     )
 
-    return {"job_id": job_id}
+    return {"job_id": job_id, "credits_remaining": remaining}
 
 
 @app.get("/api/jobs/{job_id}")

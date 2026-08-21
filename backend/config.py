@@ -76,6 +76,12 @@ VIDEO_PRESET = os.getenv("VIDEO_PRESET", "medium")
 VIDEO_PROFILE = os.getenv("VIDEO_PROFILE", "high")
 VIDEO_LEVEL = os.getenv("VIDEO_LEVEL", "4.1")
 
+# ---- Credits ----
+# Cost per clip-generation job (configurable, central)
+COST_PER_FORGE = int(os.getenv("COST_PER_FORGE", "1"))
+# Free credits granted on signup (once per account)
+SIGNUP_BONUS = int(os.getenv("SIGNUP_BONUS", "10"))
+
 # ---- Black bars + top text ----
 # Height of black bars on top/bottom (pixels). 0 = disabled.
 BLACK_BAR_HEIGHT = int(os.getenv("BLACK_BAR_HEIGHT", "120"))
