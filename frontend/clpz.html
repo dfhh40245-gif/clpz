@@ -397,6 +397,11 @@
       <label><span>Password</span><input type="password" id="auth-password" placeholder="At least 6 characters"></label>
       <label id="auth-name-row" style="display:none"><span>Display name</span><input type="text" id="auth-name" placeholder="Optional"></label>
       <button class="primary" id="auth-submit" style="width:100%">Create account</button>
+      <div style="text-align:center;margin:12px 0;color:var(--quiet);font-size:11px">or</div>
+      <button class="secondary" id="auth-google" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px">
+        <svg width="16" height="16" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.9c1.7-1.57 2.7-3.88 2.7-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.98v2.33A9 9 0 009 18z"/><path fill="#FBBC05" d="M3.95 10.7A5.4 5.4 0 013.68 9c0-.59.1-1.16.27-1.7V4.97H.98A9 9 0 000 9c0 1.45.35 2.83.98 4.03l2.97-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 00.98 4.97L3.95 7.3C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
+        Continue with Google
+      </button>
       <div style="text-align:center;margin-top:14px"><button class="quiet-btn" id="auth-toggle" style="font-size:12px">Already have an account? Log in</button></div>
       <div style="text-align:center;margin-top:6px"><button class="quiet-btn" id="auth-skip" style="font-size:11px;color:var(--quiet)">Continue without account</button></div>
     </div>
@@ -409,8 +414,10 @@
   </div>
   <div class="toast" id="toast" role="status"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
   <script>
-    const state={jobId:null,job:null,file:null,poll:null,timerTick:null,timerStartedAt:null,modalClip:null,editorClip:null,projects:[],user:null,authMode:'signup'};
+    const state={jobId:null,job:null,file:null,poll:null,timerTick:null,timerStartedAt:null,modalClip:null,editorClip:null,projects:[],user:null,authMode:'signup',supabase:null};
     const $=(s,r=document)=>r.querySelector(s);
     const $$=(s,r=document)=>[...r.querySelectorAll(s)];
     const visibleStages=[
@@ -435,16 +442,74 @@
     function clearError(){$('#error').classList.remove('show');}
     function showPaywall(){$$('.view').forEach(v=>v.classList.remove('active'));$('#paywall').classList.add('show');$('#topbar').style.display='';}
     function hidePaywall(){$('#paywall').classList.remove('show');showView('dashboard');}
-    async function api(p,o={}){const r=await fetch(p,o);const ct=r.headers.get('content-type')||'';const d=ct.includes('application/json')?await r.json():null;if(!r.ok)throw new Error(d?.detail||d?.message||`Request failed (${r.status})`);return d;}
+    // ── Supabase init ──
+    (function initSupabase(){
+      const url=window.__CLPZ_SUPABASE_URL__,key=window.__CLPZ_SUPABASE_ANON_KEY__;
+      if(url&&key&&!url.includes('YOUR_')){state.supabase=window.supabase.createClient(url,key);}
+    })();
+
+    async function api(p,o={}){
+      // If running against a local/desktop backend, use it directly
+      const r=await fetch(p,o);
+      const ct=r.headers.get('content-type')||'';
+      const d=ct.includes('application/json')?await r.json():null;
+      if(!r.ok)throw new Error(d?.detail||d?.message||`Request failed (${r.status})`);
+      return d;
+    }
+    async function apiWithAuth(p,o={}){
+      // Attach Supabase access token for authenticated API calls
+      const headers=Object.assign({},o.headers||{});
+      if(state.supabase){
+        const{s}=await state.supabase.auth.getSession();
+        if(s&&s.access_token){headers['Authorization']='Bearer '+s.access_token;}
+      }
+      return api(p,Object.assign({},o,{headers}));
+    }
 
     // ── Auth ──
-    async function checkAuth(){try{const r=await api('/api/auth/me');state.user=r.user;try{const c=await api('/api/credits/balance');state.user.credits=c.balance;state.costPerForge=c.cost_per_forge;}catch(_){}renderUserBadge();}catch(e){state.user=null;renderUserBadge();}}
+    async function checkAuth(){
+      if(state.supabase){
+        try{const{data:{user}}=await state.supabase.auth.getUser();
+          if(user){state.user={id:user.id,email:user.email,display_name:user.user_metadata?.display_name||user.email.split('@')[0],credits:0};
+            try{const c=await apiWithAuth('/api/credits/balance');state.user.credits=c.balance;state.costPerForge=c.cost_per_forge;}catch(_){}
+            renderUserBadge();return;}
+        }catch(_){}
+      }
+      state.user=null;renderUserBadge();
+    }
     function renderUserBadge(){const a=$('#user-area');if(state.user){const cr=state.user.credits??state.user.uses_remaining??0;a.innerHTML=`<span class="user-badge"><span class="credits">${cr} credit${cr===1?'':''}</span> ${esc(state.user.display_name||state.user.email)} <button class="quiet-btn" onclick="logoutUser()" style="font-size:10px;padding:2px 6px">Log out</button></span>`;}else{a.innerHTML=`<button class="quiet-btn" onclick="showAuthModal()" style="font-size:12px">Log in</button>`;}}
     function showAuthModal(){state.authMode='signup';updateAuthUI();$('#auth-modal').classList.add('show');}
     function hideAuthModal(){$('#auth-modal').classList.remove('show');}
     function updateAuthUI(){const l=state.authMode==='login';$('#auth-title').textContent=l?'Welcome back':'Create account';$('#auth-subtitle').textContent=l?'Log in to continue forging clips.':'Start forging clips from long videos.';$('#auth-submit').textContent=l?'Log in':'Create account';$('#auth-toggle').textContent=l?"Don't have an account? Sign up":'Already have an account? Log in';$('#auth-name-row').style.display=l?'none':'';$('#auth-error').classList.remove('show');}
-    async function submitAuth(){const e=$('#auth-email').value.trim(),p=$('#auth-password').value,n=$('#auth-name').value.trim(),er=$('#auth-error');er.classList.remove('show');if(!e||!p){er.textContent='Please fill in all fields.';er.classList.add('show');return;}try{const ep=state.authMode==='login'?'/api/auth/login':'/api/auth/signup';const b=state.authMode==='login'?{email:e,password:p}:{email:e,password:p,display_name:n};const r=await api(ep,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});state.user=r.user;if(r.credits!=null)state.user.credits=r.credits;hideAuthModal();renderUserBadge();updateDashboard();toast(`Welcome${state.user.display_name?', '+state.user.display_name:''}!`);}catch(er2){er.textContent=er2.message;er.classList.add('show');}}
-    async function logoutUser(){try{await api('/api/auth/logout',{method:'POST'});}catch(e){}state.user=null;renderUserBadge();toast('Logged out.');}
+    async function submitAuth(){
+      const e=$('#auth-email').value.trim(),p=$('#auth-password').value,n=$('#auth-name').value.trim(),er=$('#auth-error');
+      er.classList.remove('show');
+      if(!e||!p){er.textContent='Please fill in all fields.';er.classList.add('show');return;}
+      if(state.supabase){
+        try{let result;
+          if(state.authMode==='login'){result=await state.supabase.auth.signInWithPassword({email:e,password:p});}
+          else{result=await state.supabase.auth.signUp({email:e,password:p,options:{data:{display_name:n}}});}
+          if(result.error){er.textContent=result.error.message;er.classList.add('show');return;}
+          const user=result.data.user;
+          state.user={id:user.id,email:user.email,display_name:user.user_metadata?.display_name||user.email.split('@')[0],credits:10};
+          try{const c=await apiWithAuth('/api/credits/balance');state.user.credits=c.balance;state.costPerForge=c.cost_per_forge;}catch(_){}
+          hideAuthModal();renderUserBadge();updateDashboard();
+          toast(`Welcome, ${state.user.display_name}!`);
+        }catch(er2){er.textContent=er2.message;er.classList.add('show');}
+      }else{
+        try{const ep=state.authMode==='login'?'/api/auth/login':'/api/auth/signup';
+          const b=state.authMode==='login'?{email:e,password:p}:{email:e,password:p,display_name:n};
+          const r=await api(ep,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+          state.user=r.user;if(r.credits!=null)state.user.credits=r.credits;
+          hideAuthModal();renderUserBadge();updateDashboard();toast(`Welcome${state.user.display_name?', '+state.user.display_name:''}!`);
+        }catch(er2){er.textContent=er2.message;er.classList.add('show');}
+      }
+    }
+    async function logoutUser(){
+      if(state.supabase){try{await state.supabase.auth.signOut();}catch(e){}}
+      else{try{await api('/api/auth/logout',{method:'POST'});}catch(e){}}
+      state.user=null;renderUserBadge();toast('Logged out.');
+    }
 
     // ── Timer ──
     function stopTimer(){clearInterval(state.timerTick);state.timerTick=null;}
@@ -531,9 +596,17 @@
     $$('[data-speed]').forEach(btn=>btn.addEventListener('click',()=>{pushEditHistory();state.editState.speed=parseInt(btn.dataset.speed)/100;$('#speed-slider').value=btn.dataset.speed;$('#speed-val').textContent=state.editState.speed+'x';}));
     $('#editor-undo').addEventListener('click',undoEdit);$('#editor-redo').addEventListener('click',redoEdit);$('#editor-export').addEventListener('click',exportEdit);
     $('#auth-submit').addEventListener('click',submitAuth);$('#auth-toggle').addEventListener('click',()=>{state.authMode=state.authMode==='login'?'signup':'login';updateAuthUI();});$('#auth-skip').addEventListener('click',hideAuthModal);$('#auth-password').addEventListener('keydown',e=>{if(e.key==='Enter')submitAuth();});
+    // Google OAuth
+    $('#auth-google').addEventListener('click',async()=>{
+      if(!state.supabase){toast('Google login requires Supabase. Set up NEXT_PUBLIC_SUPABASE_URL in Vercel.');return;}
+      const{error}=await state.supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo:window.location.origin+'/clpz.html'}});
+      if(error)toast('Google sign-in failed: '+error.message);
+    });
 
     // Init
     checkAuth();
+    // If user is not logged in, show auth modal on dashboard
+    if(!state.user){$('#user-area').innerHTML=`<button class="quiet-btn" onclick="showAuthModal()" style="font-size:12px">Log in</button>`;}
     updateDashboard();
   </script>
 </body>

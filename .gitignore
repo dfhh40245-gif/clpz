@@ -2,7 +2,9 @@
 backend/cookies.txt
 *.pem
 .env
+.env.local
 cookies.txt
+frontend/config.js
 
 # Runtime artifacts
 backend/data/

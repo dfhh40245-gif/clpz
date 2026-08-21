@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "buildCommand": "node scripts/inject-env.js",
+  "outputDirectory": "frontend",
+  "routes": [
+    { "src": "^/auth.html$", "dest": "/auth.html" },
+    { "src": "^/app$", "dest": "/clpz.html" },
+    { "src": "^/dashboard$", "dest": "/clpz.html" },
+    { "src": "/(.*)", "dest": "/$1" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+      ]
+    }
+  ]
+}

@@ -86,9 +86,18 @@
   }
   .error.show{ display:block; }
 
+  .success{
+    display:none; font-size:13px; color:var(--green, #8ee6b5); background:rgba(142,230,181,.1);
+    border:1px solid rgba(142,230,181,.3); border-radius:var(--r-sm); padding:var(--s3);
+  }
+  .success.show{ display:block; }
+
   .reassure{ margin-top:var(--s6); font-size:12.5px; color:var(--ink-faint); text-align:center; line-height:1.6; }
 
   form.hidden{ display:none; }
+
+  .loading{ display:none; text-align:center; padding:var(--s10) 0; color:var(--ink-dim); }
+  .loading.show{ display:block; }
 </style>
 </head>
 <body>
@@ -101,7 +110,12 @@
 </div>
 
 <main>
-  <div class="panel">
+  <!-- Loading spinner shown while checking existing session -->
+  <div class="loading" id="loadingState">
+    <p>Checking session…</p>
+  </div>
+
+  <div class="panel" id="authPanel" style="display:none;">
     <span class="logo">CLPZ</span>
 
     <div class="tabs" role="tablist">
@@ -111,6 +125,7 @@
 
     <h1 id="formHeading">Create your account</h1>
     <div class="error" id="errorBox" role="alert"></div>
+    <div class="success" id="successBox"></div>
 
     <form id="loginForm" class="hidden" autocomplete="on">
       <div class="field">
@@ -126,10 +141,10 @@
       </div>
       <button type="submit" class="btn btn-primary" id="loginSubmit">Log in</button>
       <div class="divider">or</div>
-      <a href="/api/auth/google" class="btn btn-google">
+      <button type="button" class="btn btn-google" id="googleLoginBtn">
         <svg width="16" height="16" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.9c1.7-1.57 2.7-3.88 2.7-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.98v2.33A9 9 0 009 18z"/><path fill="#FBBC05" d="M3.95 10.7A5.4 5.4 0 013.68 9c0-.59.1-1.16.27-1.7V4.97H.98A9 9 0 000 9c0 1.45.35 2.83.98 4.03l2.97-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 00.98 4.97L3.95 7.3C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
         Continue with Google
-      </a>
+      </button>
     </form>
 
     <form id="signupForm" autocomplete="on">
@@ -139,32 +154,54 @@
       </div>
       <div class="field">
         <label for="signupPassword">Password</label>
-        <input type="password" id="signupPassword" name="password" required autocomplete="new-password" minlength="8" />
+        <input type="password" id="signupPassword" name="password" required autocomplete="new-password" minlength="6" />
       </div>
       <div class="field">
         <label for="signupConfirm">Confirm password</label>
-        <input type="password" id="signupConfirm" name="confirm" required autocomplete="new-password" minlength="8" />
+        <input type="password" id="signupConfirm" name="confirm" required autocomplete="new-password" minlength="6" />
       </div>
       <button type="submit" class="btn btn-primary" id="signupSubmit">Create account</button>
       <div class="divider">or</div>
-      <a href="/api/auth/google" class="btn btn-google">
+      <button type="button" class="btn btn-google" id="googleSignupBtn">
         <svg width="16" height="16" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.9c1.7-1.57 2.7-3.88 2.7-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.98v2.33A9 9 0 009 18z"/><path fill="#FBBC05" d="M3.95 10.7A5.4 5.4 0 013.68 9c0-.59.1-1.16.27-1.7V4.97H.98A9 9 0 000 9c0 1.45.35 2.83.98 4.03l2.97-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 00.98 4.97L3.95 7.3C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
         Continue with Google
-      </a>
+      </button>
     </form>
 
     <p class="reassure">Your email is only used to save your projects and manage your free clips. No spam, and we won't sell your data.</p>
   </div>
 </main>
 
-<script>
-  const tabLogin = document.getElementById('tabLogin');
-  const tabSignup = document.getElementById('tabSignup');
-  const loginForm = document.getElementById('loginForm');
-  const signupForm = document.getElementById('signupForm');
-  const heading = document.getElementById('formHeading');
-  const errorBox = document.getElementById('errorBox');
+<!-- Supabase JS client v2 -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- CLPZ config — injected by build script on Vercel, or set manually for local dev -->
+<script src="config.js"></script>
 
+<script>
+(function() {
+  // ── Supabase client ────────────────────────────────────────
+  const supabaseUrl = window.__CLPZ_SUPABASE_URL__;
+  const supabaseKey = window.__CLPZ_SUPABASE_ANON_KEY__;
+  const isConfigured = supabaseUrl && supabaseKey
+    && !supabaseUrl.includes('YOUR_') && !supabaseKey.includes('YOUR_');
+
+  let supabase = null;
+  if (isConfigured) {
+    supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+  }
+
+  // ── DOM elements ───────────────────────────────────────────
+  const tabLogin     = document.getElementById('tabLogin');
+  const tabSignup    = document.getElementById('tabSignup');
+  const loginForm    = document.getElementById('loginForm');
+  const signupForm   = document.getElementById('signupForm');
+  const heading      = document.getElementById('formHeading');
+  const errorBox     = document.getElementById('errorBox');
+  const successBox   = document.getElementById('successBox');
+  const loadingState = document.getElementById('loadingState');
+  const authPanel    = document.getElementById('authPanel');
+
+  // ── Mode switching ─────────────────────────────────────────
   function setMode(mode) {
     const isLogin = mode === 'login';
     tabLogin.classList.toggle('active', isLogin);
@@ -172,87 +209,225 @@
     loginForm.classList.toggle('hidden', !isLogin);
     signupForm.classList.toggle('hidden', isLogin);
     heading.textContent = isLogin ? 'Log in to CLPZ' : 'Create your account';
-    errorBox.classList.remove('show');
-    history.replaceState(null, '', `auth.html?mode=${mode}`);
+    hideMessages();
+    history.replaceState(null, '', 'auth.html?mode=' + mode);
   }
 
-  tabLogin.addEventListener('click', () => setMode('login'));
-  tabSignup.addEventListener('click', () => setMode('signup'));
+  tabLogin.addEventListener('click', function() { setMode('login'); });
+  tabSignup.addEventListener('click', function() { setMode('signup'); });
 
-  const params = new URLSearchParams(location.search);
+  var params = new URLSearchParams(location.search);
   setMode(params.get('mode') === 'login' ? 'login' : 'signup');
 
   function showError(msg) {
+    successBox.classList.remove('show');
     errorBox.textContent = msg;
     errorBox.classList.add('show');
   }
-
-  // Where to send an authenticated user. Point this at your real
-  // dashboard route once it exists — using clpz.html for now since
-  // that's the existing authenticated app shell.
-  const APP_ROUTE = '/app';
-
-  async function submitAuth(url, payload, submitBtn, busyLabel, idleLabel) {
+  function showSuccess(msg) {
     errorBox.classList.remove('show');
-    submitBtn.disabled = true;
-    submitBtn.textContent = busyLabel;
+    successBox.textContent = msg;
+    successBox.classList.add('show');
+  }
+  function hideMessages() {
+    errorBox.classList.remove('show');
+    successBox.classList.remove('show');
+  }
+
+  // ── Destination after login ────────────────────────────────
+  var APP_ROUTE = 'clpz.html';
+
+  // ── Check existing session ─────────────────────────────────
+  async function checkSession() {
+    if (!supabase) {
+      // Supabase not configured — show auth panel anyway with a warning
+      loadingState.classList.remove('show');
+      authPanel.style.display = '';
+      showError('Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel.');
+      return;
+    }
+
     try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) {
-        let message = 'Something specific went wrong — check your details and try again.';
-        try {
-          const data = await res.json();
-          if (data && (data.detail || data.message)) message = data.detail || data.message;
-        } catch (_) { /* non-JSON error body */ }
-        if (res.status === 401 || res.status === 400) {
-          message = url.includes('login')
-            ? "That email and password don't match."
-            : message;
-        }
-        showError(message);
+      var result = await supabase.auth.getSession();
+      var session = result.data && result.data.session;
+      if (session && session.user) {
+        // Already logged in — redirect to dashboard
+        window.location.href = APP_ROUTE;
         return;
       }
+    } catch (e) {
+      // Session check failed — show auth panel
+    }
+
+    loadingState.classList.remove('show');
+    authPanel.style.display = '';
+  }
+
+  // ── Email login ────────────────────────────────────────────
+  loginForm.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    hideMessages();
+
+    if (!supabase) {
+      showError('Supabase is not configured. Cannot log in.');
+      return;
+    }
+
+    var email = document.getElementById('loginEmail').value.trim();
+    var password = document.getElementById('loginPassword').value;
+    var btn = document.getElementById('loginSubmit');
+
+    btn.disabled = true;
+    btn.textContent = 'Logging in…';
+
+    try {
+      var result = await supabase.auth.signInWithPassword({ email: email, password: password });
+      if (result.error) {
+        var msg = result.error.message;
+        if (msg.includes('Invalid login') || msg.includes('invalid')) {
+          msg = "That email and password don't match.";
+        }
+        showError(msg);
+        return;
+      }
+      // Success — redirect to dashboard
       window.location.href = APP_ROUTE;
     } catch (err) {
       showError("Couldn't reach the server. Check your connection and try again.");
     } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = idleLabel;
+      btn.disabled = false;
+      btn.textContent = 'Log in';
     }
-  }
-
-  loginForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const email = document.getElementById('loginEmail').value.trim();
-    const password = document.getElementById('loginPassword').value;
-    submitAuth('/api/auth/login', { email, password }, document.getElementById('loginSubmit'), 'Logging in…', 'Log in');
   });
 
-  signupForm.addEventListener('submit', (e) => {
+  // ── Email signup ───────────────────────────────────────────
+  signupForm.addEventListener('submit', async function(e) {
     e.preventDefault();
-    const email = document.getElementById('signupEmail').value.trim();
-    const password = document.getElementById('signupPassword').value;
-    const confirm = document.getElementById('signupConfirm').value;
+    hideMessages();
+
+    if (!supabase) {
+      showError('Supabase is not configured. Cannot create account.');
+      return;
+    }
+
+    var email = document.getElementById('signupEmail').value.trim();
+    var password = document.getElementById('signupPassword').value;
+    var confirm = document.getElementById('signupConfirm').value;
+    var btn = document.getElementById('signupSubmit');
+
     if (password !== confirm) {
       showError("Those passwords don't match.");
       return;
     }
-    if (password.length < 8) {
-      showError('Password needs to be at least 8 characters.');
+    if (password.length < 6) {
+      showError('Password needs to be at least 6 characters.');
       return;
     }
-    submitAuth('/api/auth/signup', { email, password }, document.getElementById('signupSubmit'), 'Creating account…', 'Create account');
+
+    btn.disabled = true;
+    btn.textContent = 'Creating account…';
+
+    try {
+      var result = await supabase.auth.signUp({
+        email: email,
+        password: password
+      });
+
+      if (result.error) {
+        var msg = result.error.message;
+        if (msg.includes('already') || msg.includes('registered')) {
+          msg = 'An account with this email already exists. Try logging in.';
+        }
+        showError(msg);
+        return;
+      }
+
+      // Check if email confirmation is required
+      var user = result.data && result.data.user;
+      if (user && user.identities && user.identities.length === 0) {
+        showError('An account with this email already exists. Try logging in.');
+        return;
+      }
+
+      // If Supabase has email confirmation enabled, the user needs to confirm
+      if (result.data && result.data.session) {
+        // Auto-confirmed — go to dashboard
+        window.location.href = APP_ROUTE;
+      } else {
+        // Email confirmation required
+        showSuccess('Check your email for a confirmation link. Once confirmed, you can log in.');
+        setMode('login');
+      }
+    } catch (err) {
+      showError("Couldn't reach the server. Check your connection and try again.");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Create account';
+    }
   });
 
-  document.getElementById('forgotLink').addEventListener('click', (e) => {
+  // ── Google OAuth ───────────────────────────────────────────
+  async function signInWithGoogle() {
+    if (!supabase) {
+      showError('Supabase is not configured. Google login unavailable.');
+      return;
+    }
+
+    try {
+      var result = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin + '/clpz.html'
+        }
+      });
+
+      if (result.error) {
+        showError('Google sign-in failed: ' + result.error.message);
+      }
+      // If successful, Supabase redirects to Google → callback → redirectTo
+    } catch (err) {
+      showError("Google sign-in couldn't start. Check your connection.");
+    }
+  }
+
+  document.getElementById('googleLoginBtn').addEventListener('click', signInWithGoogle);
+  document.getElementById('googleSignupBtn').addEventListener('click', signInWithGoogle);
+
+  // ── Forgot password ────────────────────────────────────────
+  document.getElementById('forgotLink').addEventListener('click', async function(e) {
     e.preventDefault();
-    showError('Password reset isn\'t built yet — for now, reach out to support directly.');
+    hideMessages();
+
+    if (!supabase) {
+      showError('Supabase is not configured. Cannot reset password.');
+      return;
+    }
+
+    var email = document.getElementById('loginEmail').value.trim();
+    if (!email) {
+      showError('Enter your email above, then click "Forgot password?" again.');
+      return;
+    }
+
+    try {
+      var result = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin + '/auth.html?mode=login'
+      });
+
+      if (result.error) {
+        showError('Could not send reset email: ' + result.error.message);
+        return;
+      }
+
+      showSuccess('Password reset email sent. Check your inbox.');
+    } catch (err) {
+      showError("Couldn't reach the server. Try again later.");
+    }
   });
+
+  // ── Init ───────────────────────────────────────────────────
+  checkSession();
+})();
 </script>
 </body>
 </html>
