@@ -23,8 +23,12 @@ a = Analysis(
     ],
     binaries=[],  # FFmpeg binaries included via datas in backend/bin/
     datas=[
-        # Frontend HTML
+        # Frontend HTML — all pages the backend serves
         ('frontend/index.html', 'frontend'),
+        ('frontend/clpz.html', 'frontend'),
+        ('frontend/auth.html', 'frontend'),
+        ('frontend/admin.html', 'frontend'),
+        ('frontend/config.js', 'frontend'),
         # Backend Python modules (imported at runtime)
         (backend_path, 'backend'),
     ],
@@ -54,7 +58,11 @@ a = Analysis(
         'python_multipart',
         # Backend modules
         'config',
+        'database',
         'jobs',
+        'credits',
+        'auth',
+        'email_service',
         'pipeline.analyzer',
         'pipeline.captions',
         'pipeline.cutter',

@@ -1,0 +1,51 @@
+# CLPZ CI — Fast test suite
+# Runs on every push and PR.
+# Tests the fast suite (auth, credits, admin, pipeline unit, desktop, edge cases).
+# Does NOT run e2e/slow tests (require Whisper + FFmpeg + RAM).
+# $0/month — uses free GitHub Actions runners.
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  fast-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: backend/requirements*.txt
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install --upgrade pip
+          pip install -r requirements.txt 2>/dev/null || pip install fastapi uvicorn requests pydantic
+          pip install pytest
+
+      - name: Python syntax check
+        run: |
+          cd backend
+          python -m py_compile main.py
+          python -m py_compile auth.py
+          python -m py_compile credits.py
+          python -m py_compile database.py
+          python -m py_compile config.py
+          python -m py_compile jobs.py
+          python -m py_compile email_service.py
+
+      - name: Run fast test suite
+        run: |
+          cd backend
+          python -m pytest tests/ -m "not slow" -v --tb=short

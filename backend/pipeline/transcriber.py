@@ -12,6 +12,7 @@ from __future__ import annotations
 import gc
 import io
 import json
+import os
 import subprocess
 import struct
 import tempfile
@@ -46,6 +47,23 @@ def _get_model():
         device = config.WHISPER_DEVICE
         compute = config.WHISPER_COMPUTE
 
+        # Packaged app: use the bundled model dir when present so the app
+        # works fully offline (falls back to hub download in dev).
+        model_ref = config.WHISPER_MODEL
+        bundled = os.environ.get("CLIPFORGE_MODEL_DIR", "")
+        if bundled:
+            bundled_path = Path(bundled)
+            # Layout A: flat dir (model.bin directly inside)
+            # Layout B: HF hub cache snapshot dir
+            if (bundled_path / "model.bin").exists():
+                model_ref = str(bundled_path)
+            else:
+                snap = bundled_path / f"models--Systran--faster-whisper-{model_ref}" / "snapshots"
+                if snap.exists():
+                    snaps = sorted(snap.glob("*"))
+                    if snaps:
+                        model_ref = str(snaps[0].resolve())
+
         if device == "auto":
             try:
                 import ctranslate2
@@ -62,7 +80,7 @@ def _get_model():
             compute = "float16" if device == "cuda" else "int8"
 
         _model = WhisperModel(
-            config.WHISPER_MODEL,
+            model_ref,
             device=device,
             compute_type=compute,
         )

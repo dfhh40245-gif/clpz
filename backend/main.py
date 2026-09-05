@@ -1,49 +1,52 @@
-"""CLPZ API. Run with:  uvicorn main:app --host 0.0.0.0 --port 8000
-
-Optional auth: set CLIPFORGE_PASSWORD to require HTTP Basic auth (any username).
-Recommended whenever the port is reachable beyond your own IP.
-"""
+"""CLPZ API."""
 from __future__ import annotations
 
-import os
-import re
-import secrets
-import shutil
-import subprocess
-import threading
-import time
+import os, re, secrets, shutil, subprocess, threading, time
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field
+from starlette.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
-import auth as auth_mod
-import config
-import credits as credits_mod
-import jobs
+import auth as auth_mod, config, credits as credits_mod, jobs
+import email_service
 
-_PASSWORD = os.getenv("CLIPFORGE_PASSWORD", "")
-_security = HTTPBasic(auto_error=False)
+class _RateLimiter:
+    def __init__(s,mr=20,ws=60): s.mr=mr;s.ws=ws;s.a={};s.l=threading.Lock()
+    def is_rate_limited(s,k):
+        n=time.monotonic()
+        with s.l:
+            s.a.setdefault(k,[])
+            s.a[k]=[t for t in s.a[k] if n-t<s.ws]
+            if len(s.a[k])>=s.mr: return True
+            s.a[k].append(n); return False
 
+# Higher limits in debug mode for testing
+if config.DEBUG:
+    auth_rl=_RateLimiter(1000,60); forge_rl=_RateLimiter(1000,60)
+else:
+    auth_rl=_RateLimiter(10,60); forge_rl=_RateLimiter(5,60)
 
-def require_auth(creds: HTTPBasicCredentials | None = Depends(_security)):
-    if not _PASSWORD:
-        return
+def _cip(r):
+    f=r.headers.get("x-forwarded-for")
+    return f.split(",")[0].strip() if f else (r.client.host if r.client else "?")
 
-    ok = creds is not None and secrets.compare_digest(
-        creds.password, _PASSWORD
-    )
+ALLOWED=[o.strip() for o in os.getenv("CLPZ_ALLOWED_ORIGINS","http://localhost:8000,http://127.0.0.1:8000").split(",") if o.strip()]
 
-    if not ok:
-        raise HTTPException(
-            status_code=401,
-            detail="Authentication required.",
-            headers={"WWW-Authenticate": "Basic"},
-        )
+CSP="default-src 'self';script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;font-src 'self' https://fonts.gstatic.com;img-src 'self' data blob;connect-src 'self' https://*.supabase.co wss://*.supabase.co;media-src 'self' blob;frame-ancestors 'none'"
 
+class SecMid(BaseHTTPMiddleware):
+    async def dispatch(s,r,cn):
+        resp=await cn(r)
+        ct=resp.headers.get("content-type","")
+        if "text/html" in ct: resp.headers["Content-Security-Policy"]=CSP
+        resp.headers["X-Content-Type-Options"]="nosniff"
+        resp.headers["X-Frame-Options"]="DENY"
+        resp.headers["Referrer-Policy"]="strict-origin-when-cross-origin"
+        return resp
 
 def _get_session_user(request: Request) -> str | None:
     """Extract user_id from session cookie. Returns None if not logged in."""
@@ -62,6 +65,35 @@ def get_current_user(request: Request) -> str:
     if not user_id:
         raise HTTPException(401, "Please log in.")
     return user_id
+
+
+_JOB_ID_RE = re.compile(r"^[0-9a-f]{12}$")
+
+
+def _check_job_access(job_id: str, request: Request) -> dict:
+    """Validate job_id shape and enforce ownership when the job belongs to a user.
+
+    Anonymous (desktop/local) jobs have no owner and stay accessible without
+    auth, preserving the desktop workflow. Jobs created by a logged-in user
+    can only be read/cancelled/retried/downloaded by that user (or an admin).
+    Always returns 404 (never 403) so job ids cannot be probed.
+    """
+    if not _JOB_ID_RE.match(job_id):
+        raise HTTPException(404, "Job not found.")
+    job = jobs.get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found.")
+    owner = job.get("user_id")
+    if owner:
+        uid = _get_session_user(request)
+        if uid != owner:
+            is_admin = False
+            if uid:
+                u = auth_mod.get_user_by_id(uid)
+                is_admin = bool(u and ADMIN_EMAIL and u.get("email") == ADMIN_EMAIL)
+            if not is_admin:
+                raise HTTPException(404, "Job not found.")
+    return job
 
 
 def optional_user(request: Request) -> str | None:
@@ -98,26 +130,51 @@ def _check_binaries():
 
 app = FastAPI(
     title="CLPZ",
-    dependencies=[Depends(require_auth)],
+
 )
 
-# Allow the OpenCut editor (running on a different port) to fetch clips
+# CORS: configurable allowlist
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
+    allow_credentials=True,
 )
+app.add_middleware(SecMid)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Catch-all: log the traceback server-side, return a generic 500."""
+    import traceback
+    print(f"[CLPZ] Unhandled error on {request.method} {request.url.path}:")
+    traceback.print_exc()
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
 _check_binaries()
+
+# One-time migration from JSON files to SQLite
+import database as db
+print("CLPZ: Initializing database...")
+db.migrate_from_json()
+print("CLPZ: Database ready.")
+
 jobs.load_saved_jobs()
 
 # The original dashboard remains in frontend/index.html as a fallback.  The
 # production shell below is the Manus-inspired, API-backed interface.
-FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+# When frozen (PyInstaller), paths resolve to <install>/frontend and
+# <install>/frontend-app-dist, prepared by the packaging step.
+FRONTEND_DIR = Path(os.environ.get("CLIPFORGE_FRONTEND_DIR") or (Path(__file__).resolve().parent.parent / "frontend"))
 LANDING = FRONTEND_DIR / "index.html"
 AUTH_PAGE = FRONTEND_DIR / "auth.html"
 DASHBOARD = FRONTEND_DIR / "clpz.html"
+ADMIN_PAGE = FRONTEND_DIR / "admin.html"
+
+# React app (built with Vite + Tailwind)
+REACT_APP_DIR = Path(os.environ.get("CLIPFORGE_REACT_DIR") or (Path(__file__).resolve().parent.parent / "frontend-app" / "dist"))
 
 YT_RE = re.compile(
     r"^https?://(www\.)?(youtube\.com/(watch\?|shorts/|live/)|youtu\.be/)",
@@ -140,11 +197,23 @@ class LoginRequest(BaseModel):
 
 class ResetRequest(BaseModel):
     email: str
-    password: str
+    current_password: str
+    new_password: str
+
+
+class VerifyRequest(BaseModel):
+    email: str
+    code: str
+
+
+class RequestVerificationRequest(BaseModel):
+    email: str
 
 
 @app.post("/api/auth/signup")
-def signup(req: SignupRequest):
+def signup(request: Request, req: SignupRequest):
+    if auth_rl.is_rate_limited("signup:" + _cip(request)):
+        raise HTTPException(429, "Too many signup attempts. Please try again later.")
     try:
         user = auth_mod.create_user(req.email, req.password, req.display_name)
     except ValueError as e:
@@ -152,22 +221,28 @@ def signup(req: SignupRequest):
     # Grant signup bonus exactly once (server-authoritative)
     credits_mod.ensure_signup_bonus(user["id"])
     token = auth_mod.create_session(user["id"])
-    resp = JSONResponse({"user": user, "credits": credits_mod.get_balance(user["id"])})
-    resp.set_cookie("clpz_session", token, httponly=True, samesite="lax", max_age=86400 * 7)
+    user["email_verified"] = False
+    resp = JSONResponse({"user": user, "credits": credits_mod.get_balance(user["id"]), "email_verified": False})
+    resp.set_cookie("clpz_session", token, httponly=True, samesite="strict", secure=not config.DEBUG, max_age=86400 * 7)
     return resp
 
 
 @app.post("/api/auth/login")
-def login(req: LoginRequest):
+def login(request: Request, req: LoginRequest):
+    if auth_rl.is_rate_limited("login:" + _cip(request)):
+        raise HTTPException(429, "Too many login attempts. Please try again later.")
     user = auth_mod.authenticate_user(req.email, req.password)
     if not user:
         raise HTTPException(401, "Invalid email or password.")
+    # Check email verification status
+    email_verified = auth_mod.is_email_verified(user["id"])
     # Ensure signup bonus was granted (idempotent)
     credits_mod.ensure_signup_bonus(user["id"])
     balance = credits_mod.get_balance(user["id"])
     token = auth_mod.create_session(user["id"])
-    resp = JSONResponse({"user": user, "credits": balance})
-    resp.set_cookie("clpz_session", token, httponly=True, samesite="lax", max_age=86400 * 7)
+    user["email_verified"] = email_verified
+    resp = JSONResponse({"user": user, "credits": balance, "email_verified": email_verified})
+    resp.set_cookie("clpz_session", token, httponly=True, samesite="strict", secure=not config.DEBUG, max_age=86400 * 7)
     return resp
 
 
@@ -187,19 +262,99 @@ def get_me(user_id: str = Depends(get_current_user)):
     if not user:
         raise HTTPException(404, "User not found.")
     user["credits"] = credits_mod.get_balance(user_id)
+    user["email_verified"] = auth_mod.is_email_verified(user_id)
     return {"user": user}
 
 
 @app.post("/api/auth/reset")
 def reset_password(req: ResetRequest):
+    user = auth_mod.authenticate_user(req.email, req.current_password)
+    if not user:
+        raise HTTPException(401, "Current password is incorrect.")
     try:
-        ok = auth_mod.reset_password(req.email, req.password)
+        auth_mod.set_password(user["id"], req.new_password)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    if not ok:
-        raise HTTPException(404, "No account found with that email.")
-    return {"message": "Password reset successfully."}
+    auth_mod.destroy_all_user_sessions(user["id"])
+    return {"message": "Password reset successfully. Please log in again."}
 
+
+# ── Email verification endpoints --------------------------------
+
+@app.post("/api/auth/request-verification")
+def request_verification(req: RequestVerificationRequest):
+    """Send a verification code to the user's email."""
+    email = req.email.strip().lower()
+    user = auth_mod.get_user_by_email(email)
+    if not user:
+        raise HTTPException(404, "No account found with that email.")
+    if auth_mod.is_email_verified(user["id"]):
+        return {"message": "Email already verified."}
+    code = auth_mod.generate_verification_code(user["id"], "signup")
+    email_service.send_verification_email(email, code, "signup")
+    resp = {"message": "Verification code sent to your email."}
+    if config.DEBUG:
+        resp["code"] = code  # Dev-only: allows testing without email
+    return resp
+
+
+@app.post("/api/auth/verify-email")
+def verify_email(req: VerifyRequest):
+    """Verify email with 6-digit code."""
+    email = req.email.strip().lower()
+    user = auth_mod.get_user_by_email(email)
+    if not user:
+        raise HTTPException(404, "No account found with that email.")
+    if auth_mod.is_email_verified(user["id"]):
+        return {"message": "Email already verified."}
+    if not auth_mod.verify_code(user["id"], req.code, "signup"):
+        raise HTTPException(400, "Invalid or expired verification code.")
+    auth_mod.mark_email_verified(user["id"])
+    return {"message": "Email verified successfully."}
+
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetWithCodeRequest(BaseModel):
+    email: str
+    code: str
+    new_password: str
+
+
+@app.post("/api/auth/forgot-password")
+def forgot_password(req: ForgotPasswordRequest):
+    """Send a password reset code to the user's email."""
+    email = req.email.strip().lower()
+    user = auth_mod.get_user_by_email(email)
+    if not user:
+        # Don't reveal whether account exists
+        return {"message": "If an account exists, a reset code has been sent."}
+    code = auth_mod.generate_verification_code(user["id"], "reset")
+    email_service.send_password_reset_email(email, code)
+    resp = {"message": "If an account exists, a reset code has been sent."}
+    if config.DEBUG:
+        resp["code"] = code  # Dev-only
+    return resp
+
+
+@app.post("/api/auth/reset-with-code")
+def reset_with_code(req: ResetWithCodeRequest):
+    """Reset password using a 6-digit code sent via email."""
+    email = req.email.strip().lower()
+    user = auth_mod.get_user_by_email(email)
+    if not user:
+        raise HTTPException(400, "Invalid or expired reset code.")
+    if not auth_mod.verify_code(user["id"], req.code, "reset"):
+        raise HTTPException(400, "Invalid or expired reset code.")
+    try:
+        auth_mod.set_password(user["id"], req.new_password)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    auth_mod.destroy_all_user_sessions(user["id"])
+    return {"message": "Password reset successfully. Please log in with your new password."}
 
 # ── Credit endpoints ─────────────────────────────────────────────
 
@@ -227,6 +382,7 @@ class JobRequest(BaseModel):
         max_length=200,
     )
     auth_token: str = Field(default="")
+    idempotency_key: str = Field(default="")
 
 
 def _job_payload(job: dict) -> dict:
@@ -252,6 +408,11 @@ def _job_payload(job: dict) -> dict:
     return job
 
 
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page():
+    return ADMIN_PAGE.read_text(encoding="utf-8")
+
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     return LANDING.read_text(encoding="utf-8")
@@ -267,8 +428,43 @@ def dashboard():
     return DASHBOARD.read_text(encoding="utf-8")
 
 
+# ── React App (Vite + Tailwind) ───────────────────────────────
+# Serve the built React app when available.  Falls back to vanilla HTML.
+if REACT_APP_DIR.exists() and (REACT_APP_DIR / "index.html").exists():
+    # Mount static assets (JS, CSS, images) from the React build
+    _react_assets = REACT_APP_DIR / "assets"
+    if _react_assets.exists():
+        app.mount("/assets", StaticFiles(directory=str(_react_assets)), name="react-assets")
+
+    def _react_index():
+        # no-cache: index.html must revalidate (hashed assets can cache forever)
+        return FileResponse(
+            str(REACT_APP_DIR / "index.html"),
+            media_type="text/html",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    # React app routes — catch-all for client-side routing
+    @app.get("/new", response_class=HTMLResponse)
+    def react_root():
+        return _react_index()
+
+    @app.get("/new/{path:path}", response_class=HTMLResponse)
+    def react_catch_all(path: str = ""):
+        return _react_index()
+
+    @app.get("/favicon.png")
+    def react_favicon():
+        f = REACT_APP_DIR / "favicon.png"
+        if f.exists():
+            return FileResponse(str(f), media_type="image/png")
+        raise HTTPException(404, "Not found")
+
+
 @app.post("/api/jobs")
 def create_job(req: JobRequest, request: Request):
+    if forge_rl.is_rate_limited("forge:" + _cip(request)):
+        raise HTTPException(429, "Too many requests. Please wait before trying again.")
     url = req.url.strip()
 
     if not YT_RE.match(url):
@@ -284,10 +480,19 @@ def create_job(req: JobRequest, request: Request):
     if not user_id:
         user_id = _get_session_user(request)
 
+    # Generate idempotency key if not provided
+    idempotency_key = req.idempotency_key
+    if not idempotency_key and user_id:
+        import hashlib
+        idempotency_key = hashlib.sha256(
+            f"{user_id}:{url}:{req.max_clips}:{time.time():.0f}".encode()
+        ).hexdigest()[:16]
+
     # Charge credits BEFORE creating the job (atomic check-and-deduct)
     if user_id:
         ok, remaining = credits_mod.check_and_charge(
-            user_id, credits_mod.COST_PER_FORGE
+            user_id, credits_mod.COST_PER_FORGE,
+            idempotency_key=idempotency_key
         )
         if not ok:
             raise HTTPException(
@@ -310,6 +515,7 @@ def create_job(req: JobRequest, request: Request):
         if user_id and remaining is not None:
             credits_mod.refund(
                 user_id, credits_mod.COST_PER_FORGE,
+                related_id=job_id if "job_id" in dir() else "",
                 reason="Job creation failed — refund"
             )
         raise
@@ -317,12 +523,33 @@ def create_job(req: JobRequest, request: Request):
     return {"job_id": job_id, "credits_remaining": remaining}
 
 
+def _job_visible_to(job: dict, user_id: str | None, is_admin: bool) -> bool:
+    """Whether a caller may see a job in the shared list.
+
+    Anonymous (desktop/local) jobs have no owner and remain visible to
+    everyone — that keeps the private .bat workflow working without login.
+    Account-owned jobs are visible only to that account (or an admin) so one
+    user can never enumerate another user's projects or clip metadata.
+    """
+    owner = job.get("user_id")
+    if not owner:
+        return True
+    if is_admin:
+        return True
+    return bool(user_id) and owner == user_id
+
+
 @app.get("/api/jobs")
-def list_jobs():
-    """List persisted projects for the Projects screen."""
-    all_jobs = jobs.get_all_jobs()
-    all_jobs.sort(key=lambda job: job.get("created_at", 0), reverse=True)
-    return [_job_payload(job) for job in all_jobs]
+def list_jobs(request: Request):
+    """List persisted projects for the Projects screen (scoped to caller)."""
+    uid = _get_session_user(request)
+    is_admin = False
+    if uid:
+        u = auth_mod.get_user_by_id(uid)
+        is_admin = bool(u and ADMIN_EMAIL and u.get("email") == ADMIN_EMAIL)
+    visible = [j for j in jobs.get_all_jobs() if _job_visible_to(j, uid, is_admin)]
+    visible.sort(key=lambda job: job.get("created_at", 0), reverse=True)
+    return [_job_payload(job) for job in visible]
 
 
 @app.post("/api/jobs/upload")
@@ -399,21 +626,72 @@ async def upload_job(
 
     video_path = job_dir / f"source{ext}"
 
+    MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
     try:
         with video_path.open("wb") as out:
+            written = 0
             while True:
                 chunk = await file.read(1024 * 1024)
 
                 if not chunk:
                     break
 
+                written += len(chunk)
+                if written > MAX_UPLOAD_BYTES:
+                    out.close()
+                    video_path.unlink(missing_ok=True)
+                    jobs.cancel_job(job_id)
+                    if user_id and remaining is not None:
+                        credits_mod.refund(
+                            user_id, credits_mod.COST_PER_FORGE,
+                            reason="Upload too large — refund"
+                        )
+                    raise HTTPException(
+                        413,
+                        "Video is too large. Maximum upload size is 2 GB.",
+                    )
+
                 out.write(chunk)
 
+    except HTTPException:
+        raise
     except Exception:
+        video_path.unlink(missing_ok=True)
         raise HTTPException(
             500,
             "Failed to save uploaded video.",
         )
+
+    # Quick ffprobe validation — reject obviously corrupted files early
+    try:
+        import shutil as _shutil
+        ffprobe_bin = jobs._find_bin("ffprobe")
+        probe_result = subprocess.run(
+            [
+                ffprobe_bin, "-v", "error",
+                "-show_entries", "stream=codec_type",
+                "-show_entries", "format=duration",
+                "-of", "json", str(video_path),
+            ],
+            capture_output=True, text=True, timeout=15,
+        )
+        if probe_result.returncode != 0:
+            video_path.unlink(missing_ok=True)
+            jobs.cancel_job(job_id)
+            if user_id and remaining is not None:
+                credits_mod.refund(
+                    user_id, credits_mod.COST_PER_FORGE,
+                    reason="Upload validation failed — refund"
+                )
+            raise HTTPException(
+                400,
+                "The uploaded file is not a valid video. "
+                "Please upload a valid MP4, MOV, or MKV file."
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # If ffprobe is missing or errors, let the pipeline handle it
 
     jobs.start_uploaded_job(
         job_id,
@@ -425,12 +703,8 @@ async def upload_job(
 
 
 @app.get("/api/jobs/{job_id}")
-def job_status(job_id: str):
-    job = jobs.get_job(job_id)
-
-    if not job:
-        raise HTTPException(404, "Job not found.")
-
+def job_status(job_id: str, request: Request):
+    job = _check_job_access(job_id, request)
     return _job_payload(job)
 
 
@@ -442,12 +716,19 @@ def clear_old_jobs():
     return {"message": f"Old jobs cleared. {remaining} job(s) remaining.", "remaining": remaining}
 
 
+@app.post("/api/jobs/reset")
+def reset_jobs(request: Request):
+    """Reset all job state. Debug builds only (used by the test suite)."""
+    if not config.DEBUG:
+        raise HTTPException(404, "Not found.")
+    jobs.reset_for_testing()
+    return {"message": "Jobs reset."}
+
+
 @app.post("/api/jobs/{job_id}/retry")
-def retry_job(job_id: str):
+def retry_job(job_id: str, request: Request):
     """Retry a failed/cancelled job from the last completed stage."""
-    job = jobs.get_job(job_id)
-    if not job:
-        raise HTTPException(404, "Job not found.")
+    job = _check_job_access(job_id, request)
     if job.get("stage") not in ("error", "cancelled"):
         raise HTTPException(400, "Only failed or cancelled jobs can be retried.")
 
@@ -473,12 +754,142 @@ def retry_job(job_id: str):
 
 
 @app.post("/api/jobs/{job_id}/cancel")
-def cancel_job(job_id: str):
+def cancel_job(job_id: str, request: Request):
     """Cancel a running or queued job."""
+    _check_job_access(job_id, request)
     ok = jobs.cancel_job(job_id)
     if not ok:
         raise HTTPException(400, "Job cannot be cancelled.")
     return {"message": "Job cancelled.", "job_id": job_id}
+
+
+
+# ── Admin endpoints ─────────────────────────────────────────────
+
+ADMIN_EMAIL = os.getenv("CLPZ_ADMIN_EMAIL", "")
+
+
+def require_admin(request: Request) -> str:
+    """Dependency: require admin authorization. Returns user_id."""
+    user_id = _get_session_user(request)
+    if not user_id:
+        raise HTTPException(401, "Please log in.")
+    user = auth_mod.get_user_by_id(user_id)
+    if not user or user.get("email") != ADMIN_EMAIL:
+        raise HTTPException(403, "Admin access required.")
+    return user_id
+
+
+@app.get("/api/admin/users")
+def admin_list_users(request: Request, admin_id: str = Depends(require_admin)):
+    """List all users (admin only)."""
+    users = db.get_all_users()
+    for u in users:
+        u["credits"] = credits_mod.get_balance(u["id"])
+    return {"users": users, "total": db.count_users()}
+
+
+@app.get("/api/admin/stats")
+def admin_stats(request: Request, admin_id: str = Depends(require_admin)):
+    """System statistics (admin only)."""
+    import platform
+    import psutil
+    stats = db.get_stats()
+    stats["platform"] = platform.system()
+    stats["python"] = platform.python_version()
+    try:
+        mem = psutil.virtual_memory()
+        stats["ram_total_gb"] = round(mem.total / 1024**3, 1)
+        stats["ram_available_gb"] = round(mem.available / 1024**3, 1)
+    except Exception:
+        pass
+    return stats
+
+
+@app.post("/api/admin/credits/add")
+def admin_add_credits(
+    request: Request,
+    user_id: str,
+    amount: int,
+    reason: str = "",
+    _admin_id: str = Depends(require_admin),
+):
+    """Add credits to a user (admin only)."""
+    if amount <= 0:
+        raise HTTPException(400, "Amount must be positive.")
+    if not auth_mod.get_user_by_id(user_id):
+        raise HTTPException(404, "User not found.")
+    new_bal = credits_mod.add_credits(user_id, amount, "admin_grant", reason or "Admin credit grant")
+    return {"user_id": user_id, "new_balance": new_bal}
+
+
+@app.post("/api/admin/credits/remove")
+def admin_remove_credits(
+    request: Request,
+    user_id: str,
+    amount: int,
+    reason: str = "",
+    _admin_id: str = Depends(require_admin),
+):
+    """Remove credits from a user (admin only)."""
+    if amount <= 0:
+        raise HTTPException(400, "Amount must be positive.")
+    if not auth_mod.get_user_by_id(user_id):
+        raise HTTPException(404, "User not found.")
+    # Use check_and_charge to safely deduct
+    ok, remaining = credits_mod.check_and_charge(user_id, amount)
+    if not ok:
+        raise HTTPException(400, f"Cannot remove {amount} credits. User has {remaining}.")
+    db.log_transaction(user_id, -amount, "admin_removal", reason or "Admin credit removal")
+    return {"user_id": user_id, "new_balance": remaining}
+
+
+@app.get("/api/admin/transactions/{user_id}")
+def admin_user_transactions(
+    request: Request,
+    user_id: str,
+    limit: int = 50,
+    _admin_id: str = Depends(require_admin),
+):
+    """View transactions for a user (admin only)."""
+    txns = credits_mod.get_transactions(user_id, limit=limit)
+    return {"transactions": txns}
+
+
+
+
+@app.get("/api/admin/users/search")
+def admin_search_users(
+    request: Request,
+    q: str = "",
+    _admin_id: str = Depends(require_admin),
+):
+    """Search users by email (admin only)."""
+    if not q:
+        return {"users": []}
+    conn = db._get_conn()
+    rows = conn.execute(
+        "SELECT id, email, display_name, email_verified, created_at, plan "
+        "FROM users WHERE email LIKE ? ORDER BY created_at DESC LIMIT 50",
+        (f"%{q.lower()}%",),
+    ).fetchall()
+    users = [dict(r) for r in rows]
+    for u in users:
+        u["credits"] = credits_mod.get_balance(u["id"])
+    return {"users": users}
+
+
+@app.get("/api/admin/jobs")
+def admin_list_jobs(
+    request: Request,
+    limit: int = 50,
+    _admin_id: str = Depends(require_admin),
+):
+    """List all jobs (admin only)."""
+    all_jobs = jobs.get_all_jobs()
+    all_jobs.sort(key=lambda j: j.get("created_at", 0), reverse=True)
+    return {"jobs": all_jobs[:limit], "total": len(all_jobs)}
+
 
 
 @app.get("/api/diagnostics")
@@ -523,14 +934,15 @@ def diagnostics():
     # CPU count
     info["cpu_count"] = os.cpu_count() or 1
 
-    # OpenCut
-    info["opencut"] = "available" if _find_opencut_dir() else "missing"
+    # Editor
+    info["editor"] = "built-in"
 
     return info
 
 
 @app.get("/api/jobs/{job_id}/clips/{index}")
-def download_clip(job_id: str, index: int):
+def download_clip(job_id: str, index: int, request: Request):
+    _check_job_access(job_id, request)
     path = jobs.clip_path(
         job_id,
         index,
@@ -565,8 +977,9 @@ def download_clip(job_id: str, index: int):
 
 
 @app.get("/api/jobs/{job_id}/clips/{index}/stream")
-def stream_clip(job_id: str, index: int):
+def stream_clip(job_id: str, index: int, request: Request):
     """Play the real rendered MP4 inline without triggering a download."""
+    _check_job_access(job_id, request)
     path = jobs.clip_path(job_id, index)
     if not path:
         raise HTTPException(404, "Clip not ready.")
@@ -574,8 +987,9 @@ def stream_clip(job_id: str, index: int):
 
 
 @app.get("/api/jobs/{job_id}/clips/{index}/thumbnail")
-def clip_thumbnail(job_id: str, index: int):
+def clip_thumbnail(job_id: str, index: int, request: Request):
     """Serve the thumbnail extracted from the verified rendered clip."""
+    _check_job_access(job_id, request)
     path = jobs.clip_thumbnail_path(job_id, index)
     if not path:
         raise HTTPException(404, "Clip thumbnail not ready.")
@@ -583,8 +997,9 @@ def clip_thumbnail(job_id: str, index: int):
 
 
 @app.get("/api/jobs/{job_id}/clips/{index}/ass")
-def clip_ass(job_id: str, index: int):
+def clip_ass(job_id: str, index: int, request: Request):
     """Return the ASS subtitle file for a clip (used by the editor)."""
+    _check_job_access(job_id, request)
     job_dir = config.DATA_DIR / job_id
     job = jobs.get_job(job_id)
     clip = next((c for c in (job or {}).get("clips", []) if c.get("index") == index), {})
@@ -611,8 +1026,9 @@ def _unique_path(directory: Path, filename: str) -> Path:
 
 
 @app.post("/api/jobs/{job_id}/clips/{index}/save")
-def save_clip(job_id: str, index: int):
+def save_clip(job_id: str, index: int, request: Request):
     """Save a rendered clip to the user's Videos/CLPZ Clips folder."""
+    _check_job_access(job_id, request)
     path = jobs.clip_path(job_id, index)
     if not path:
         raise HTTPException(404, "Clip not ready.")
@@ -643,115 +1059,6 @@ def save_clip(job_id: str, index: int):
     }
 
 
-# ── OpenCut integration ──────────────────────────────────────────────
-_opencut_proc: subprocess.Popen | None = None
-_opencut_port: int = 0
-_opencut_lock = threading.Lock()
-
-
-def _find_opencut_dir() -> Path | None:
-    """Locate the OpenCut classic checkout relative to the backend."""
-    for candidate in [
-        Path(__file__).resolve().parent.parent / "OpenCut",
-        Path(__file__).resolve().parent.parent / "opencut",
-    ]:
-        if (candidate / "apps" / "web" / ".next" / "standalone").exists():
-            return candidate
-        if (candidate / "apps" / "web" / "package.json").exists():
-            return candidate
-    return None
-
-
-def _start_opencut() -> int:
-    """Start the OpenCut production server (on-demand). Returns the port."""
-    global _opencut_proc, _opencut_port
-    with _opencut_lock:
-        if _opencut_proc and _opencut_proc.poll() is None:
-            return _opencut_port
-
-        oc_dir = _find_opencut_dir()
-        if not oc_dir:
-            raise HTTPException(500, "OpenCut not found.")
-
-        web_dir = oc_dir / "apps" / "web"
-        bun = _find_bun()
-        if not bun:
-            raise HTTPException(500, "Bun not found.")
-
-        import socket
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(("", 0))
-            _opencut_port = s.getsockname()[1]
-
-        env = os.environ.copy()
-        env["PORT"] = str(_opencut_port)
-        env["HOST"] = "127.0.0.1"
-
-        _opencut_proc = subprocess.Popen(
-            [bun, "run", "start"],
-            cwd=str(web_dir),
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
-        # Wait for the server to be ready
-        import urllib.request
-        for _ in range(30):
-            time.sleep(0.5)
-            try:
-                urllib.request.urlopen(
-                    f"http://127.0.0.1:{_opencut_port}/", timeout=2
-                )
-                return _opencut_port
-            except Exception:
-                continue
-
-        raise HTTPException(500, "OpenCut failed to start.")
-
-
-def _find_bun() -> str | None:
-    """Find the bun executable."""
-    bun = shutil.which("bun")
-    if bun:
-        return bun
-    # Check common Windows locations
-    for candidate in [
-        Path.home() / ".bun" / "bin" / "bun.exe",
-        Path("C:/Users") / os.getenv("USERNAME", "") / ".bun" / "bin" / "bun.exe",
-    ]:
-        if candidate.exists():
-            return str(candidate)
-    return None
-
-
-@app.post("/api/edit")
-def start_editor(job_id: str, clip_index: int):
-    """Start OpenCut editor for a specific clip. Returns the editor URL."""
-    path = jobs.clip_path(job_id, clip_index)
-    if not path:
-        raise HTTPException(404, "Clip not ready.")
-
-    port = _start_opencut()
-
-    return {
-        "url": f"http://127.0.0.1:{port}/projects",
-        "clip_path": str(path),
-        "clip_url": f"http://127.0.0.1:8000/api/jobs/{job_id}/clips/{clip_index}",
-        "port": port,
-    }
-
-
-@app.get("/api/edit/status")
-def editor_status():
-    """Check if OpenCut is running."""
-    running = _opencut_proc is not None and _opencut_proc.poll() is None
-    return {
-        "running": running,
-        "port": _opencut_port if running else None,
-        "url": f"http://127.0.0.1:{_opencut_port}" if running else None,
-    }
-
 
 class EditRequest(BaseModel):
     trim_start: float | None = Field(default=None, ge=0)
@@ -764,11 +1071,9 @@ class EditRequest(BaseModel):
 
 
 @app.post("/api/jobs/{job_id}/clips/{index}/edit")
-def edit_clip(job_id: str, index: int, req: EditRequest):
+def edit_clip(job_id: str, index: int, req: EditRequest, request: Request):
     """Re-render a clip with editor modifications. Returns the edited clip URL."""
-    job = jobs.get_job(job_id)
-    if not job:
-        raise HTTPException(404, "Job not found.")
+    job = _check_job_access(job_id, request)
 
     clip = next((c for c in job["clips"] if c["index"] == index), None)
     if not clip or clip.get("status") != "done":
@@ -810,7 +1115,14 @@ def edit_clip(job_id: str, index: int, req: EditRequest):
             f":x=(w-text_w)/2+{x-int(config.OUT_WIDTH/2)}:y=(h-text_h)/2+{y-int(config.OUT_HEIGHT/2)}"
         )
 
-    cmd = [ffmpeg_exe, "-y", "-i", str(src_path)]
+    # Trim: apply BEFORE -i so it operates on the source timeline,
+    # not the output timeline (which would be affected by speed filters).
+    cmd = [ffmpeg_exe, "-y"]
+    if req.trim_start:
+        cmd += ["-ss", f"{req.trim_start:.2f}"]
+    if req.trim_end:
+        cmd += ["-to", f"{req.trim_end:.2f}"]
+    cmd += ["-i", str(src_path)]
 
     if req.muted:
         cmd += ["-an"]
@@ -828,13 +1140,6 @@ def edit_clip(job_id: str, index: int, req: EditRequest):
         "-c:a", "aac", "-b:a", "192k",
         "-movflags", "+faststart",
     ]
-
-    # Trim
-    if req.trim_start is not None or req.trim_end is not None:
-        if req.trim_start:
-            cmd += ["-ss", f"{req.trim_start:.2f}"]
-        if req.trim_end:
-            cmd += ["-to", f"{req.trim_end:.2f}"]
 
     cmd.append(str(out_path))
 

@@ -3,19 +3,9 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
+DEBUG = os.getenv("CLPZ_DEBUG", "1") == "1"
 DATA_DIR = Path(os.getenv("CLIPFORGE_DATA", BASE_DIR / "data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-# ---- AWS Bedrock ----
-# Region for the Bedrock API endpoint (not necessarily where your EC2 runs).
-AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-# Claude Sonnet 5 via the global cross-region inference profile — best
-# quality/price for transcript analysis ($2/$10 intro pricing until Aug 31 2026,
-# then $3/$15). All serverless models are auto-enabled; Anthropic models just
-# need a one-time use-case form on first use.
-BEDROCK_MODEL_ID = os.getenv(
-    "BEDROCK_MODEL_ID", "global.anthropic.claude-sonnet-4-6"
-)
 
 # ---- YouTube download ----
 # Path to a Netscape-format cookies.txt exported from a logged-in YouTube
@@ -63,7 +53,7 @@ RENDER_WORKERS = int(os.getenv("RENDER_WORKERS", "1"))
 # Retention is opt-in.  A restart must not silently remove completed projects.
 # Use the Clear projects action, or set a positive value, when automatic
 # retention cleanup is genuinely desired.
-AUTO_CLEANUP_HOURS = int(os.getenv("CLIPFORGE_AUTO_CLEANUP_HOURS", "0"))
+AUTO_CLEANUP_HOURS = int(os.getenv("CLIPFORGE_AUTO_CLEANUP_HOURS", "168"))  # 7 days default
 
 # ---- Output video ----
 OUT_WIDTH = 1080

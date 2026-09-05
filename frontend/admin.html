@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLPZ Admin</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0a0a0b;color:#ededed;min-height:100vh;-webkit-font-smoothing:antialiased}
+.header{background:#141416;padding:16px 24px;border-bottom:1px solid #222226;display:flex;justify-content:space-between;align-items:center}
+.header h1{font-size:18px;font-weight:600;color:#f0a030;letter-spacing:-0.02em}
+.header .user-info{font-size:13px;color:#a0a0a8}
+.container{max-width:1200px;margin:0 auto;padding:24px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:24px}
+.stat-card{background:#141416;border:1px solid #222226;border-radius:12px;padding:20px}
+.stat-card h3{font-size:11px;color:#6b6b73;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600}
+.stat-card .value{font-size:28px;font-weight:700;color:#f0a030;letter-spacing:-0.03em}
+.section{background:#141416;border:1px solid #222226;border-radius:12px;margin-bottom:24px;overflow:hidden}
+.section-header{padding:16px 20px;border-bottom:1px solid #222226;display:flex;justify-content:space-between;align-items:center}
+.section-header h2{font-size:16px;font-weight:600}
+.section-body{padding:20px}
+.search-box{display:flex;gap:8px}
+.search-box input{flex:1;padding:8px 12px;border:1px solid #3a3a40;border-radius:6px;background:#0a0a0b;color:#ededed;font-size:14px;outline:none}
+.search-box input:focus{border-color:#f0a030}
+.search-box button,.btn{padding:8px 16px;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600}
+.btn-primary{background:#f0a030;color:#0a0a0b;border-radius:9999px}
+.btn-primary:hover{background:#f5b34d}
+.btn-danger{background:#f87171;color:#0a0a0b}
+.btn-danger:hover{background:#fca5a5}
+.btn-sm{padding:4px 10px;font-size:12px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #222226;font-size:13px}
+th{color:#6b6b73;font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:0.04em}
+tr:hover{background:rgba(255,255,255,0.03)}
+.badge{display:inline-block;padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:600}
+.badge-green{background:rgba(52,211,153,.15);color:#34d399}
+.badge-yellow{background:rgba(251,191,36,.15);color:#fbbf24}
+.badge-red{background:rgba(248,113,113,.15);color:#f87171}
+.badge-gray{background:rgba(255,255,255,.08);color:#a0a0a8}
+.modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:100;align-items:center;justify-content:center}
+.modal.active{display:flex}
+.modal-content{background:#141416;border:1px solid #222226;border-radius:12px;padding:24px;width:400px;max-width:90vw}
+.modal-content h3{margin-bottom:16px;font-weight:600}
+.modal-content .field{margin-bottom:12px}
+.modal-content label{display:block;font-size:13px;color:#a0a0a8;margin-bottom:4px}
+.modal-content input{width:100%;padding:8px 12px;border:1px solid #3a3a40;border-radius:6px;background:#0a0a0b;color:#ededed;font-size:14px;outline:none}
+.modal-content input:focus{border-color:#f0a030}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.empty{text-align:center;padding:40px;color:#6b6b73}
+.loading{text-align:center;padding:20px;color:#a0a0a8}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>CLPZ Admin</h1>
+  <div class="user-info" id="adminInfo"></div>
+</div>
+
+<div class="container">
+  <!-- Stats -->
+  <div class="stats-grid" id="statsGrid">
+    <div class="stat-card"><h3>Users</h3><div class="value" id="statUsers">-</div></div>
+    <div class="stat-card"><h3>Active Sessions</h3><div class="value" id="statSessions">-</div></div>
+    <div class="stat-card"><h3>Jobs</h3><div class="value" id="statJobs">-</div></div>
+    <div class="stat-card"><h3>Transactions</h3><div class="value" id="statTxns">-</div></div>
+    <div class="stat-card"><h3>DB Size</h3><div class="value" id="statDB">-</div></div>
+  </div>
+
+  <!-- Users -->
+  <div class="section">
+    <div class="section-header">
+      <h2>Users</h2>
+      <div class="search-box">
+        <input type="text" id="userSearch" placeholder="Search by email...">
+        <button class="btn btn-primary" onclick="searchUsers()">Search</button>
+      </div>
+    </div>
+    <div class="section-body">
+      <div id="usersTable"><div class="loading">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- Recent Jobs -->
+  <div class="section">
+    <div class="section-header">
+      <h2>Recent Jobs</h2>
+    </div>
+    <div class="section-body">
+      <div id="jobsTable"><div class="loading">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- User Detail (hidden by default) -->
+  <div class="section" id="userDetail" style="display:none">
+    <div class="section-header">
+      <h2 id="detailTitle">User Detail</h2>
+      <button class="btn btn-sm" onclick="closeDetail()">Close</button>
+    </div>
+    <div class="section-body">
+      <div id="detailContent"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Credit Modal -->
+<div class="modal" id="creditModal">
+  <div class="modal-content">
+    <h3 id="modalTitle">Adjust Credits</h3>
+    <div class="field">
+      <label>Amount</label>
+      <input type="number" id="creditAmount" min="1" value="1">
+    </div>
+    <div class="field">
+      <label>Reason</label>
+      <input type="text" id="creditReason" placeholder="Reason for adjustment">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="modalConfirm" onclick="confirmCredit()">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let currentUserId = '';
+let currentAction = '';
+
+async function api(path, opts) {
+  const r = await fetch(API + path, opts);
+  if (r.status === 401) { window.location.href = '/auth.html?mode=login'; return null; }
+  if (r.status === 403) { document.getElementById('usersTable').innerHTML = '<div class="empty">Admin access required. Set CLPZ_ADMIN_EMAIL env var.</div>'; return null; }
+  return r.json();
+}
+
+async function loadStats() {
+  const data = await api('/api/admin/stats');
+  if (!data) return;
+  document.getElementById('statUsers').textContent = data.users || 0;
+  document.getElementById('statSessions').textContent = data.sessions || 0;
+  document.getElementById('statJobs').textContent = data.jobs || 0;
+  document.getElementById('statTxns').textContent = data.transactions || 0;
+  document.getElementById('statDB').textContent = (data.db_size_mb || 0) + ' MB';
+}
+
+async function loadUsers() {
+  const data = await api('/api/admin/users');
+  if (!data) return;
+  renderUsers(data.users);
+}
+
+function renderUsers(users) {
+  if (!users.length) {
+    document.getElementById('usersTable').innerHTML = '<div class="empty">No users found</div>';
+    return;
+  }
+  let html = '<table><tr><th>Email</th><th>Name</th><th>Credits</th><th>Verified</th><th>Plan</th><th>Joined</th><th>Actions</th></tr>';
+  for (const u of users) {
+    const joined = u.created_at ? new Date(u.created_at * 1000).toLocaleDateString() : '-';
+    html += `<tr>
+      <td>${esc(u.email)}</td>
+      <td>${esc(u.display_name)}</td>
+      <td><strong>${u.credits || 0}</strong></td>
+      <td>${u.email_verified ? '<span class="badge badge-green">Yes</span>' : '<span class="badge badge-yellow">No</span>'}</td>
+      <td><span class="badge badge-gray">${esc(u.plan || 'free')}</span></td>
+      <td>${joined}</td>
+      <td>
+        <button class="btn btn-sm btn-primary" onclick="viewUser('${u.id}','${esc(u.email)}')">View</button>
+        <button class="btn btn-sm btn-primary" onclick="openCreditModal('${u.id}','add')">+ Add</button>
+        <button class="btn btn-sm btn-danger" onclick="openCreditModal('${u.id}','remove')">- Remove</button>
+      </td>
+    </tr>`;
+  }
+  html += '</table>';
+  document.getElementById('usersTable').innerHTML = html;
+}
+
+async function searchUsers() {
+  const q = document.getElementById('userSearch').value.trim();
+  if (!q) { loadUsers(); return; }
+  const data = await api('/api/admin/users/search?q=' + encodeURIComponent(q));
+  if (data) renderUsers(data.users);
+}
+
+async function viewUser(userId, email) {
+  currentUserId = userId;
+  document.getElementById('userDetail').style.display = 'block';
+  document.getElementById('detailTitle').textContent = email;
+  document.getElementById('detailContent').innerHTML = '<div class="loading">Loading...</div>';
+
+  const txns = await api('/api/admin/transactions/' + userId);
+  if (!txns) return;
+
+  let html = '<h3 style="margin-bottom:12px">Transaction History</h3>';
+  if (!txns.transactions.length) {
+    html += '<div class="empty">No transactions</div>';
+  } else {
+    html += '<table><tr><th>Date</th><th>Type</th><th>Amount</th><th>Description</th><th>Ref</th></tr>';
+    for (const t of txns.transactions) {
+      const date = t.created_at ? new Date(t.created_at * 1000).toLocaleString() : '-';
+      const color = t.amount > 0 ? '#34d399' : '#f87171';
+      html += `<tr>
+        <td>${date}</td>
+        <td><span class="badge badge-gray">${esc(t.type)}</span></td>
+        <td style="color:${color};font-weight:bold">${t.amount > 0 ? '+' : ''}${t.amount}</td>
+        <td>${esc(t.description)}</td>
+        <td>${esc(t.related_id || '-')}</td>
+      </tr>`;
+    }
+    html += '</table>';
+  }
+  document.getElementById('detailContent').innerHTML = html;
+}
+
+function closeDetail() {
+  document.getElementById('userDetail').style.display = 'none';
+  currentUserId = '';
+}
+
+function openCreditModal(userId, action) {
+  currentUserId = userId;
+  currentAction = action;
+  document.getElementById('modalTitle').textContent = action === 'add' ? 'Add Credits' : 'Remove Credits';
+  document.getElementById('creditAmount').value = 1;
+  document.getElementById('creditReason').value = '';
+  document.getElementById('creditModal').classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('creditModal').classList.remove('active');
+  currentUserId = '';
+  currentAction = '';
+}
+
+async function confirmCredit() {
+  const amount = parseInt(document.getElementById('creditAmount').value);
+  const reason = document.getElementById('creditReason').value || 'Admin adjustment';
+  if (!amount || amount <= 0) return;
+
+  const endpoint = currentAction === 'add' ? '/api/admin/credits/add' : '/api/admin/credits/remove';
+  const params = new URLSearchParams({user_id: currentUserId, amount: amount, reason: reason});
+  const r = await fetch(API + endpoint + '?' + params, {method: 'POST'});
+  const data = await r.json();
+
+  if (r.ok) {
+    closeModal();
+    loadUsers();
+    if (document.getElementById('userDetail').style.display !== 'none') {
+      viewUser(currentUserId, document.getElementById('detailTitle').textContent);
+    }
+  } else {
+    alert(data.detail || 'Failed');
+  }
+}
+
+async function loadJobs() {
+  const data = await api('/api/admin/jobs?limit=20');
+  if (!data || !data.jobs.length) {
+    document.getElementById('jobsTable').innerHTML = '<div class="empty">No jobs</div>';
+    return;
+  }
+  let html = '<table><tr><th>ID</th><th>Type</th><th>Stage</th><th>User</th><th>Created</th></tr>';
+  for (const j of data.jobs) {
+    const created = j.created_at ? new Date(j.created_at * 1000).toLocaleString() : '-';
+    const stageClass = j.stage === 'done' ? 'badge-green' : j.stage === 'error' ? 'badge-red' : 'badge-yellow';
+    html += `<tr>
+      <td>${esc(j.id)}</td>
+      <td>${esc(j.input_type)}</td>
+      <td><span class="badge ${stageClass}">${esc(j.stage)}</span></td>
+      <td>${esc(j.user_id || '-')}</td>
+      <td>${created}</td>
+    </tr>`;
+  }
+  html += '</table>';
+  document.getElementById('jobsTable').innerHTML = html;
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+// Search on Enter
+document.getElementById('userSearch').addEventListener('keydown', e => { if (e.key === 'Enter') searchUsers(); });
+
+// Load on start
+loadStats();
+loadUsers();
+loadJobs();
+</script>
+</body>
+</html>

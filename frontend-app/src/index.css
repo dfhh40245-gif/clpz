@@ -1,0 +1,326 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+}
+
+/* ============================================
+   CLPZ Pearl Button — exact Qelvra design
+   ============================================ */
+.pearl-button {
+  --white: #ffe7ff;
+  --bg: #080808;
+  --radius: 100px;
+  outline: none;
+  cursor: pointer;
+  border: 0;
+  position: relative;
+  border-radius: var(--radius);
+  background-color: var(--bg);
+  transition: all 0.2s ease;
+  box-shadow:
+    inset 0 0.3rem 0.9rem rgba(255, 255, 255, 0.3),
+    inset 0 -0.1rem 0.3rem rgba(0, 0, 0, 0.7),
+    inset 0 -0.4rem 0.9rem rgba(255, 255, 255, 0.5),
+    0 3rem 3rem rgba(0, 0, 0, 0.3),
+    0 1rem 1rem -0.6rem rgba(0, 0, 0, 0.8);
+}
+.pearl-button .wrap {
+  font-size: 25px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+  padding: 32px 45px;
+  border-radius: inherit;
+  position: relative;
+  overflow: hidden;
+}
+.pearl-button .wrap p span:nth-child(2) {
+  display: none;
+}
+.pearl-button:hover .wrap p span:nth-child(1) {
+  display: none;
+}
+.pearl-button:hover .wrap p span:nth-child(2) {
+  display: inline-block;
+}
+.pearl-button .wrap p {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  transition: all 0.2s ease;
+  transform: translateY(2%);
+  -webkit-mask-image: linear-gradient(to bottom, white 40%, transparent);
+          mask-image: linear-gradient(to bottom, white 40%, transparent);
+}
+.pearl-button .wrap::before,
+.pearl-button .wrap::after {
+  content: "";
+  position: absolute;
+  transition: all 0.3s ease;
+}
+.pearl-button .wrap::before {
+  left: -15%;
+  right: -15%;
+  bottom: 25%;
+  top: -100%;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.12);
+}
+.pearl-button .wrap::after {
+  left: 6%;
+  right: 6%;
+  top: 12%;
+  bottom: 40%;
+  border-radius: 22px 22px 0 0;
+  box-shadow: inset 0 10px 8px -10px rgba(255, 255, 255, 0.8);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.3) 0%,
+    rgba(0, 0, 0, 0) 50%,
+    rgba(0, 0, 0, 0) 100%
+  );
+}
+.pearl-button:hover {
+  box-shadow:
+    inset 0 0.3rem 0.5rem rgba(255, 255, 255, 0.4),
+    inset 0 -0.1rem 0.3rem rgba(0, 0, 0, 0.7),
+    inset 0 -0.4rem 0.9rem rgba(255, 255, 255, 0.7),
+    0 3rem 3rem rgba(0, 0, 0, 0.3),
+    0 1rem 1rem -0.6rem rgba(0, 0, 0, 0.8);
+}
+.pearl-button:hover .wrap::before {
+  transform: translateY(-5%);
+}
+.pearl-button:hover .wrap::after {
+  opacity: 0.4;
+  transform: translateY(5%);
+}
+.pearl-button:hover .wrap p {
+  transform: translateY(-4%);
+}
+.pearl-button:active {
+  transform: translateY(4px);
+  box-shadow:
+    inset 0 0.3rem 0.5rem rgba(255, 255, 255, 0.5),
+    inset 0 -0.1rem 0.3rem rgba(0, 0, 0, 0.8),
+    inset 0 -0.4rem 0.9rem rgba(255, 255, 255, 0.4),
+    0 3rem 3rem rgba(0, 0, 0, 0.3),
+    0 1rem 1rem -0.6rem rgba(0, 0, 0, 0.8);
+}
+
+/* Heartbeat idle animation */
+@keyframes pearl-heartbeat {
+  0% {
+    transform: scale(1);
+    box-shadow:
+      inset 0 0.3rem 0.9rem rgba(255, 255, 255, 0.3),
+      inset 0 -0.1rem 0.3rem rgba(0, 0, 0, 0.7),
+      inset 0 -0.4rem 0.9rem rgba(255, 255, 255, 0.5),
+      0 3rem 3rem rgba(0, 0, 0, 0.3),
+      0 1rem 1rem -0.6rem rgba(0, 0, 0, 0.8);
+  }
+  50% {
+    transform: scale(1.03);
+    box-shadow:
+      inset 0 0.3rem 0.9rem rgba(255, 255, 255, 0.3),
+      inset 0 -0.1rem 0.3rem rgba(0, 0, 0, 0.7),
+      inset 0 -0.4rem 0.9rem rgba(255, 255, 255, 0.5),
+      0 3rem 3rem rgba(0, 0, 0, 0.3),
+      0 1rem 1rem -0.6rem rgba(0, 0, 0, 0.8),
+      0 0 20px rgba(255, 255, 255, 0.08);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow:
+      inset 0 0.3rem 0.9rem rgba(255, 255, 255, 0.3),
+      inset 0 -0.1rem 0.3rem rgba(0, 0, 0, 0.7),
+      inset 0 -0.4rem 0.9rem rgba(255, 255, 255, 0.5),
+      0 3rem 3rem rgba(0, 0, 0, 0.3),
+      0 1rem 1rem -0.6rem rgba(0, 0, 0, 0.8);
+  }
+}
+.pearl-button {
+  animation: pearl-heartbeat 2s ease-in-out infinite;
+}
+.pearl-button:hover {
+  animation: none;
+}
+.pearl-button:active {
+  animation: none;
+  transform: translateY(4px);
+}
+
+/* Small size */
+.pearl-button-sm .wrap {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 20px;
+  letter-spacing: 0.05em;
+}
+.pearl-button-sm .wrap p {
+  gap: 6px;
+}
+
+/* Dark mode pearl button */
+.dark .pearl-button {
+  --bg: #e8e6e1;
+}
+.dark .pearl-button .wrap {
+  color: rgba(0, 0, 0, 0.7);
+}
+.dark .pearl-button .wrap::before {
+  background-color: rgba(0, 0, 0, 0.08);
+}
+.dark .pearl-button .wrap::after {
+  box-shadow: inset 0 10px 8px -10px rgba(0, 0, 0, 0.3);
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.08) 0%,
+    rgba(0, 0, 0, 0) 50%,
+    rgba(0, 0, 0, 0) 100%
+  );
+}
+.dark .pearl-button:hover {
+  box-shadow:
+    inset 0 0.3rem 0.5rem rgba(255, 255, 255, 0.4),
+    inset 0 -0.1rem 0.3rem rgba(0, 0, 0, 0.3),
+    inset 0 -0.4rem 0.9rem rgba(255, 255, 255, 0.5),
+    0 3rem 3rem rgba(0, 0, 0, 0.15),
+    0 1rem 1rem -0.6rem rgba(0, 0, 0, 0.3),
+    0 0 20px rgba(232, 230, 225, 0.15);
+}
+@keyframes pearl-heartbeat-dark {
+  0% {
+    transform: scale(1);
+    box-shadow:
+      inset 0 0.3rem 0.9rem rgba(255, 255, 255, 0.4),
+      inset 0 -0.1rem 0.3rem rgba(0, 0, 0, 0.3),
+      inset 0 -0.4rem 0.9rem rgba(255, 255, 255, 0.5),
+      0 3rem 3rem rgba(0, 0, 0, 0.15),
+      0 1rem 1rem -0.6rem rgba(0, 0, 0, 0.3);
+  }
+  50% {
+    transform: scale(1.03);
+    box-shadow:
+      inset 0 0.3rem 0.9rem rgba(255, 255, 255, 0.4),
+      inset 0 -0.1rem 0.3rem rgba(0, 0, 0, 0.3),
+      inset 0 -0.4rem 0.9rem rgba(255, 255, 255, 0.5),
+      0 3rem 3rem rgba(0, 0, 0, 0.15),
+      0 1rem 1rem -0.6rem rgba(0, 0, 0, 0.3),
+      0 0 20px rgba(232, 230, 225, 0.12);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow:
+      inset 0 0.3rem 0.9rem rgba(255, 255, 255, 0.4),
+      inset 0 -0.1rem 0.3rem rgba(0, 0, 0, 0.3),
+      inset 0 -0.4rem 0.9rem rgba(255, 255, 255, 0.5),
+      0 3rem 3rem rgba(0, 0, 0, 0.15),
+      0 1rem 1rem -0.6rem rgba(0, 0, 0, 0.3);
+  }
+}
+.dark .pearl-button {
+  animation: pearl-heartbeat-dark 2s ease-in-out infinite;
+}
+.dark .pearl-button:hover {
+  animation: none;
+}
+.dark .pearl-button:active {
+  animation: none;
+  transform: translateY(4px);
+}
+
+/* ============================================
+   CLPZ Glow Heartbeat Button (for auth CTA)
+   ============================================ */
+.glow-heartbeat-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.75rem 1.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #ffffff;
+  background: #1a1a2e;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+.glow-heartbeat-btn::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: -1;
+}
+.glow-heartbeat-btn:hover::before {
+  opacity: 1;
+}
+.glow-heartbeat-btn:hover {
+  background: #2a2a3e;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.08), 0 0 40px rgba(255, 255, 255, 0.04);
+  transform: translateY(-1px);
+}
+@keyframes heartbeat-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(26, 26, 46, 0.4); transform: scale(1); }
+  50% { box-shadow: 0 0 0 8px rgba(26, 26, 46, 0); transform: scale(1.03); }
+  100% { box-shadow: 0 0 0 0 rgba(26, 26, 46, 0); transform: scale(1); }
+}
+.glow-heartbeat-btn {
+  animation: heartbeat-pulse 2s ease-in-out infinite;
+}
+.glow-heartbeat-btn:hover {
+  animation: none;
+}
+.dark .glow-heartbeat-btn {
+  background: #e8e6e1;
+  color: #1a1a2e;
+  border-color: rgba(0, 0, 0, 0.1);
+}
+.dark .glow-heartbeat-btn:hover {
+  background: #f5f3ee;
+  box-shadow: 0 0 20px rgba(232, 230, 225, 0.15), 0 0 40px rgba(232, 230, 225, 0.08);
+}
+@keyframes heartbeat-pulse-dark {
+  0% { box-shadow: 0 0 0 0 rgba(232, 230, 225, 0.4); transform: scale(1); }
+  50% { box-shadow: 0 0 0 8px rgba(232, 230, 225, 0); transform: scale(1.03); }
+  100% { box-shadow: 0 0 0 0 rgba(232, 230, 225, 0); transform: scale(1); }
+}
+.dark .glow-heartbeat-btn {
+  animation: heartbeat-pulse-dark 2s ease-in-out infinite;
+}
+.dark .glow-heartbeat-btn:hover {
+  animation: none;
+}
+
+/* Floating input labels */
+.floating-input:placeholder-shown + .floating-label {
+  transform: translateY(0) scale(1);
+}
+.floating-input:focus + .floating-label,
+.floating-input:not(:placeholder-shown) + .floating-label {
+  transform: translateY(-1.5rem) scale(0.75);
+  color: #f0a030;
+}

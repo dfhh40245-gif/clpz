@@ -6,25 +6,22 @@
 <title>Log in or sign up — CLPZ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#121214; --panel:#19191c; --panel-raised:#212125;
-    --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.15);
-    --ink:#f2f1ec; --ink-dim:#a3a29d; --ink-faint:#68675f;
-    --accent:#efa93a; --accent-ink:#211203; --accent-soft:rgba(239,169,58,.13);
-    --danger:#e07856;
-    --r-sm:6px; --r-md:10px; --r-lg:16px; --r-xl:22px;
+    --bg:#0a0a0b; --panel:#141416; --panel-raised:#1c1c1f;
+    --border:#222226; --border-strong:#3a3a40;
+    --ink:#ededed; --ink-dim:#a0a0a8; --ink-faint:#6b6b73;
+    --accent:#f0a030; --accent-ink:#0a0a0b; --accent-soft:rgba(240,160,48,.13);
+    --danger:#f87171;
+    --r-sm:6px; --r-md:8px; --r-lg:12px; --r-xl:16px;
     --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s8:32px; --s10:40px;
-    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    --font-display: "Bricolage Grotesque", var(--font-ui);
+    --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-display: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
   *,*::before,*::after{ box-sizing:border-box; }
   body{
-    margin:0; min-height:100vh; background:
-      radial-gradient(ellipse 900px 500px at 50% -10%, rgba(239,169,58,.08), transparent 60%),
-      radial-gradient(ellipse 600px 400px at 80% 20%, rgba(239,169,58,.03), transparent 50%),
-      var(--bg);
+    margin:0; min-height:100vh;    background:var(--bg);
     color:var(--ink); font-family:var(--font-ui); -webkit-font-smoothing:antialiased;
     display:flex; flex-direction:column;
   }
@@ -68,8 +65,9 @@
     display:flex; align-items:center; justify-content:center; gap:8px; cursor:pointer; border:0;
     transition:background-color .12s ease, opacity .12s ease;
   }
-  .btn-primary{ background:var(--accent); color:var(--accent-ink); box-shadow:0 0 20px rgba(239,169,58,.2); }
-  .btn-primary:hover{ background:#f4b654; box-shadow:0 0 28px rgba(239,169,58,.3); transform:translateY(-1px); }
+  .btn-primary{ background:var(--accent); color:var(--accent-ink); border-radius:9999px; }
+  .btn-primary:hover{ background:#f5b34d; }
+  .btn-primary:active{ transform:translateY(1px); }
   .btn-primary:disabled{ opacity:.6; cursor:default; transform:none; box-shadow:none; }
   .btn-google{
     background:var(--panel); border:1px solid var(--border-strong); color:var(--ink);
@@ -81,14 +79,14 @@
   .divider::before, .divider::after{ content:""; flex:1; height:1px; background:var(--border); }
 
   .error{
-    display:none; font-size:13px; color:var(--danger); background:rgba(224,120,86,.1);
-    border:1px solid rgba(224,120,86,.3); border-radius:var(--r-sm); padding:var(--s3);
+    display:none; font-size:13px; color:var(--danger); background:rgba(248,113,113,.1);
+    border:1px solid rgba(248,113,113,.3); border-radius:var(--r-sm); padding:var(--s3);
   }
   .error.show{ display:block; }
 
   .success{
-    display:none; font-size:13px; color:var(--green, #8ee6b5); background:rgba(142,230,181,.1);
-    border:1px solid rgba(142,230,181,.3); border-radius:var(--r-sm); padding:var(--s3);
+    display:none; font-size:13px; color:#34d399; background:rgba(52,211,153,.1);
+    border:1px solid rgba(52,211,153,.3); border-radius:var(--r-sm); padding:var(--s3);
   }
   .success.show{ display:block; }
 
@@ -172,38 +170,21 @@
   </div>
 </main>
 
-<!-- Supabase JS client v2 -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<!-- CLPZ config — injected by build script on Vercel, or set manually for local dev -->
-<script src="config.js"></script>
-
 <script>
 (function() {
-  // ── Supabase client ────────────────────────────────────────
-  const supabaseUrl = window.__CLPZ_SUPABASE_URL__;
-  const supabaseKey = window.__CLPZ_SUPABASE_ANON_KEY__;
-  const isConfigured = supabaseUrl && supabaseKey
-    && !supabaseUrl.includes('YOUR_') && !supabaseKey.includes('YOUR_');
+  var APP_ROUTE = 'clpz.html';
+  var tabLogin = document.getElementById('tabLogin');
+  var tabSignup = document.getElementById('tabSignup');
+  var loginForm = document.getElementById('loginForm');
+  var signupForm = document.getElementById('signupForm');
+  var heading = document.getElementById('formHeading');
+  var errorBox = document.getElementById('errorBox');
+  var successBox = document.getElementById('successBox');
+  var loadingState = document.getElementById('loadingState');
+  var authPanel = document.getElementById('authPanel');
 
-  let supabase = null;
-  if (isConfigured) {
-    supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
-  }
-
-  // ── DOM elements ───────────────────────────────────────────
-  const tabLogin     = document.getElementById('tabLogin');
-  const tabSignup    = document.getElementById('tabSignup');
-  const loginForm    = document.getElementById('loginForm');
-  const signupForm   = document.getElementById('signupForm');
-  const heading      = document.getElementById('formHeading');
-  const errorBox     = document.getElementById('errorBox');
-  const successBox   = document.getElementById('successBox');
-  const loadingState = document.getElementById('loadingState');
-  const authPanel    = document.getElementById('authPanel');
-
-  // ── Mode switching ─────────────────────────────────────────
   function setMode(mode) {
-    const isLogin = mode === 'login';
+    var isLogin = mode === 'login';
     tabLogin.classList.toggle('active', isLogin);
     tabSignup.classList.toggle('active', !isLogin);
     loginForm.classList.toggle('hidden', !isLogin);
@@ -212,220 +193,96 @@
     hideMessages();
     history.replaceState(null, '', 'auth.html?mode=' + mode);
   }
-
   tabLogin.addEventListener('click', function() { setMode('login'); });
   tabSignup.addEventListener('click', function() { setMode('signup'); });
-
   var params = new URLSearchParams(location.search);
   setMode(params.get('mode') === 'login' ? 'login' : 'signup');
 
-  function showError(msg) {
-    successBox.classList.remove('show');
-    errorBox.textContent = msg;
-    errorBox.classList.add('show');
-  }
-  function showSuccess(msg) {
-    errorBox.classList.remove('show');
-    successBox.textContent = msg;
-    successBox.classList.add('show');
-  }
-  function hideMessages() {
-    errorBox.classList.remove('show');
-    successBox.classList.remove('show');
+  function showError(msg) { successBox.classList.remove('show'); errorBox.textContent = msg; errorBox.classList.add('show'); }
+  function showSuccess(msg) { errorBox.classList.remove('show'); successBox.textContent = msg; successBox.classList.add('show'); }
+  function hideMessages() { errorBox.classList.remove('show'); successBox.classList.remove('show'); }
+
+  async function api(path, opts) {
+    opts = opts || {};
+    var r = await fetch(path, opts);
+    var ct = r.headers.get('content-type') || '';
+    var d = ct.includes('application/json') ? await r.json() : null;
+    if (!r.ok) throw new Error((d && (d.detail || d.message)) || 'Request failed (' + r.status + ')');
+    return d;
   }
 
-  // ── Destination after login ────────────────────────────────
-  var APP_ROUTE = 'clpz.html';
-
-  // ── Check existing session ─────────────────────────────────
   async function checkSession() {
-    if (!supabase) {
-      // Supabase not configured — show auth panel anyway with a warning
-      loadingState.classList.remove('show');
-      authPanel.style.display = '';
-      showError('Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel.');
-      return;
-    }
-
-    try {
-      var result = await supabase.auth.getSession();
-      var session = result.data && result.data.session;
-      if (session && session.user) {
-        // Already logged in — redirect to dashboard
-        window.location.href = APP_ROUTE;
-        return;
-      }
-    } catch (e) {
-      // Session check failed — show auth panel
-    }
-
-    loadingState.classList.remove('show');
-    authPanel.style.display = '';
+    try { var result = await api('/api/auth/me'); if (result && result.user) { window.location.href = APP_ROUTE; return; } } catch (e) {}
+    loadingState.classList.remove('show'); authPanel.style.display = '';
   }
 
-  // ── Email login ────────────────────────────────────────────
   loginForm.addEventListener('submit', async function(e) {
-    e.preventDefault();
-    hideMessages();
-
-    if (!supabase) {
-      showError('Supabase is not configured. Cannot log in.');
-      return;
-    }
-
+    e.preventDefault(); hideMessages();
     var email = document.getElementById('loginEmail').value.trim();
     var password = document.getElementById('loginPassword').value;
     var btn = document.getElementById('loginSubmit');
-
-    btn.disabled = true;
-    btn.textContent = 'Logging in…';
-
+    btn.disabled = true; btn.textContent = 'Logging in...';
     try {
-      var result = await supabase.auth.signInWithPassword({ email: email, password: password });
-      if (result.error) {
-        var msg = result.error.message;
-        if (msg.includes('Invalid login') || msg.includes('invalid')) {
-          msg = "That email and password don't match.";
-        }
-        showError(msg);
+      var result = await api('/api/auth/login', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({email: email, password: password}) });
+      if (!result.email_verified) {
+        showSuccess('Please verify your email.');
+        try { await api('/api/auth/request-verification', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({email: email}) }); } catch (ve) {} showSuccess('A verification code has been sent to ' + email + '. Check your inbox.');
+        heading.textContent = 'Verify your email'; loginForm.classList.add('hidden'); signupForm.classList.add('hidden');
+        heading.insertAdjacentHTML('afterend', '<div id="verifyBox"><form id="verifyForm"><div class="field"><label>Code</label><input type="text" id="verifyCode" maxlength="6" style="text-align:center;font-size:24px;letter-spacing:8px"></div><button type="submit" class="btn btn-primary">Verify</button></form></div>');
+        document.getElementById('verifyForm').addEventListener('submit', async function(ve) { ve.preventDefault(); try { await api('/api/auth/verify-email', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({email: email, code: document.getElementById('verifyCode').value.trim()}) }); showSuccess('Verified! Redirecting...'); setTimeout(function() { window.location.href = APP_ROUTE; }, 1000); } catch (err) { showError(err.message); } });
         return;
       }
-      // Success — redirect to dashboard
       window.location.href = APP_ROUTE;
-    } catch (err) {
-      showError("Couldn't reach the server. Check your connection and try again.");
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'Log in';
-    }
+    } catch (err) { showError(err.message); } finally { btn.disabled = false; btn.textContent = 'Log in'; }
   });
 
-  // ── Email signup ───────────────────────────────────────────
   signupForm.addEventListener('submit', async function(e) {
-    e.preventDefault();
-    hideMessages();
-
-    if (!supabase) {
-      showError('Supabase is not configured. Cannot create account.');
-      return;
-    }
-
+    e.preventDefault(); hideMessages();
     var email = document.getElementById('signupEmail').value.trim();
     var password = document.getElementById('signupPassword').value;
     var confirm = document.getElementById('signupConfirm').value;
     var btn = document.getElementById('signupSubmit');
-
-    if (password !== confirm) {
-      showError("Those passwords don't match.");
-      return;
-    }
-    if (password.length < 6) {
-      showError('Password needs to be at least 6 characters.');
-      return;
-    }
-
-    btn.disabled = true;
-    btn.textContent = 'Creating account…';
-
+    if (password !== confirm) { showError('Passwords do not match.'); return; }
+    if (password.length < 6) { showError('Password needs at least 6 characters.'); return; }
+    btn.disabled = true; btn.textContent = 'Creating account...';
     try {
-      var result = await supabase.auth.signUp({
-        email: email,
-        password: password
-      });
-
-      if (result.error) {
-        var msg = result.error.message;
-        if (msg.includes('already') || msg.includes('registered')) {
-          msg = 'An account with this email already exists. Try logging in.';
-        }
-        showError(msg);
-        return;
-      }
-
-      // Check if email confirmation is required
-      var user = result.data && result.data.user;
-      if (user && user.identities && user.identities.length === 0) {
-        showError('An account with this email already exists. Try logging in.');
-        return;
-      }
-
-      // If Supabase has email confirmation enabled, the user needs to confirm
-      if (result.data && result.data.session) {
-        // Auto-confirmed — go to dashboard
-        window.location.href = APP_ROUTE;
-      } else {
-        // Email confirmation required
-        showSuccess('Check your email for a confirmation link. Once confirmed, you can log in.');
-        setMode('login');
-      }
-    } catch (err) {
-      showError("Couldn't reach the server. Check your connection and try again.");
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'Create account';
-    }
+      await api('/api/auth/signup', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({email: email, password: password, display_name: ''}) });
+      showSuccess('Account created! Please verify your email.');
+      try { await api('/api/auth/request-verification', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({email: email}) }); } catch (ve) {} showSuccess('A verification code has been sent to ' + email + '. Check your inbox.');
+      heading.textContent = 'Verify your email'; signupForm.classList.add('hidden');
+      heading.insertAdjacentHTML('afterend', '<div id="verifyBox"><form id="verifyForm"><div class="field"><label>Code</label><input type="text" id="verifyCode" maxlength="6" style="text-align:center;font-size:24px;letter-spacing:8px"></div><button type="submit" class="btn btn-primary">Verify</button></form></div>');
+      document.getElementById('verifyForm').addEventListener('submit', async function(ve) { ve.preventDefault(); try { await api('/api/auth/verify-email', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({email: email, code: document.getElementById('verifyCode').value.trim()}) }); showSuccess('Verified! Redirecting...'); setTimeout(function() { window.location.href = APP_ROUTE; }, 1000); } catch (err) { showError(err.message); } });
+    } catch (err) { showError(err.message); } finally { btn.disabled = false; btn.textContent = 'Create account'; }
   });
 
-  // ── Google OAuth ───────────────────────────────────────────
-  async function signInWithGoogle() {
-    if (!supabase) {
-      showError('Supabase is not configured. Google login unavailable.');
-      return;
-    }
-
-    try {
-      var result = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin + '/clpz.html'
-        }
-      });
-
-      if (result.error) {
-        showError('Google sign-in failed: ' + result.error.message);
-      }
-      // If successful, Supabase redirects to Google → callback → redirectTo
-    } catch (err) {
-      showError("Google sign-in couldn't start. Check your connection.");
-    }
-  }
-
+  function signInWithGoogle() { showError('Google login coming soon. Use email and password.'); }
   document.getElementById('googleLoginBtn').addEventListener('click', signInWithGoogle);
   document.getElementById('googleSignupBtn').addEventListener('click', signInWithGoogle);
 
-  // ── Forgot password ────────────────────────────────────────
   document.getElementById('forgotLink').addEventListener('click', async function(e) {
-    e.preventDefault();
-    hideMessages();
-
-    if (!supabase) {
-      showError('Supabase is not configured. Cannot reset password.');
-      return;
-    }
-
+    e.preventDefault(); hideMessages();
     var email = document.getElementById('loginEmail').value.trim();
-    if (!email) {
-      showError('Enter your email above, then click "Forgot password?" again.');
-      return;
-    }
-
+    if (!email) { showError('Enter your email above first.'); return; }
     try {
-      var result = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.origin + '/auth.html?mode=login'
+      await api('/api/auth/forgot-password', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({email: email}) });
+      showSuccess('If an account exists, a reset code has been sent to your email.');
+      heading.textContent = 'Reset your password';
+      loginForm.classList.add('hidden'); signupForm.classList.add('hidden');
+      heading.insertAdjacentHTML('afterend', '<div id="resetBox"><form id="resetForm"><div class="field"><label>Reset code</label><input type="text" id="resetCode" maxlength="6" style="text-align:center;font-size:24px;letter-spacing:8px"></div><div class="field"><label>New password</label><input type="password" id="resetNewPassword" minlength="6"></div><button type="submit" class="btn btn-primary">Reset password</button></form></div>');
+      document.getElementById('resetForm').addEventListener('submit', async function(re) {
+        re.preventDefault();
+        var code = document.getElementById('resetCode').value.trim();
+        var np = document.getElementById('resetNewPassword').value;
+        if (np.length < 6) { showError('Password needs at least 6 characters.'); return; }
+        try {
+          await api('/api/auth/reset-with-code', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({email: email, code: code, new_password: np}) });
+          showSuccess('Password reset! Redirecting to login...');
+          setTimeout(function() { setMode('login'); history.replaceState(null, '', 'auth.html?mode=login'); }, 1500);
+        } catch (err) { showError(err.message); }
       });
-
-      if (result.error) {
-        showError('Could not send reset email: ' + result.error.message);
-        return;
-      }
-
-      showSuccess('Password reset email sent. Check your inbox.');
-    } catch (err) {
-      showError("Couldn't reach the server. Try again later.");
-    }
+    } catch (err) { showError(err.message); }
   });
 
-  // ── Init ───────────────────────────────────────────────────
   checkSession();
 })();
 </script>

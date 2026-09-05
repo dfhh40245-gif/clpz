@@ -7,13 +7,44 @@ cookies.txt
 
 # Runtime artifacts
 backend/data/
+backend/test_data/
+backend/clpz.db
+*.db
+*.db-wal
+*.db-shm
 *.mp4
+*.mp3
 *.ass
 
 # Python
 .venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+
+# Packaging build output + release artifacts
+# Regenerate via `python packaging/build_windows.py`; attach the installer to
+# a GitHub Release instead of committing it.
+packaging/build/
+packaging/dist/
+packaging/out/
+
+# Node
+node_modules/
+
+# Agent/tooling local state (never push)
+.freebuff/
+
+# Legacy prototypes & unrelated work (kept on disk only, never pushed)
+qelvra-feature-complete-platform-implementation/
+clpz manus version/
+edit/
+CLPZ_/
+
+# Stray workspace files
+Codex Image*.png
+clpz-context.txt
+workflow-upgrade.txt
 
 # OS noise
 .DS_Store

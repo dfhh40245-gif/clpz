@@ -18,6 +18,7 @@ from pathlib import Path
 
 import config
 import credits as credits_mod
+import database as db
 from pipeline import (
     analyzer,
     captions,
@@ -78,6 +79,11 @@ def _persist(job: dict):
         d.mkdir(parents=True, exist_ok=True)
         (d / "job.json").write_text(json.dumps(job), encoding="utf-8")
     except OSError:
+        pass
+    # Also persist to SQLite for reliability
+    try:
+        db.save_job(job)
+    except Exception:
         pass
 
 
@@ -192,7 +198,8 @@ def _build_thumbnail(path: Path, duration: float, out_path: Path) -> Path:
 
 
 def load_saved_jobs():
-    """Called at startup: restore finished/errored jobs from disk."""
+    """Called at startup: restore finished/errored jobs from disk and SQLite."""
+    # Load from JSON files on disk
     for f in config.DATA_DIR.glob("*/job.json"):
         try:
             job = json.loads(f.read_text(encoding="utf-8"))
@@ -209,10 +216,42 @@ def load_saved_jobs():
         with _lock:
             JOBS.setdefault(job["id"], job)
 
+    # Also load any jobs from SQLite that aren't already loaded
+    try:
+        all_db_jobs = db.get_all_jobs()
+        for job in all_db_jobs:
+            if job.get("stage") not in ("done", "error"):
+                job["stage"] = "error"
+                job["error"] = (
+                    "Server restarted while this job was running. "
+                    "Submit it again."
+                )
+            with _lock:
+                if job["id"] not in JOBS:
+                    JOBS[job["id"]] = job
+                    # Also write JSON file for backward compatibility
+                    try:
+                        d = config.DATA_DIR / job["id"]
+                        d.mkdir(parents=True, exist_ok=True)
+                        (d / "job.json").write_text(json.dumps(job), encoding="utf-8")
+                    except OSError:
+                        pass
+    except Exception:
+        pass
+
     # Never silently delete a user's rendered projects on server startup.
     # Retention can be explicitly enabled in configuration.
     if config.AUTO_CLEANUP_HOURS > 0:
         _cleanup_old_jobs(max_age_hours=config.AUTO_CLEANUP_HOURS)
+
+
+def reset_for_testing():
+    """Reset all in-memory job state. For test isolation only."""
+    global JOBS, _slots
+    with _lock:
+        JOBS.clear()
+    # Recreate semaphore to reset slots
+    _slots = threading.Semaphore(MAX_CONCURRENT_JOBS)
 
 
 def _cleanup_old_jobs(max_age_hours: int = 24, keep_minimum: int = 3):
@@ -244,7 +283,7 @@ def _cleanup_old_jobs(max_age_hours: int = 24, keep_minimum: int = 3):
     candidates.sort(key=lambda x: x[0])
 
     # Keep at least keep_minimum, remove the rest if old enough
-    to_remove = candidates[:-keep_minimum] if len(candidates) > keep_minimum else []
+    to_remove = candidates[:len(candidates) - keep_minimum] if len(candidates) > keep_minimum else []
 
     removed = 0
     for mtime, job_id, job_dir in to_remove:
@@ -355,6 +394,8 @@ def _classify_error(error_msg: str) -> str:
             return "TRANSCRIPTION_OOM"
         return "TRANSCRIPTION_FAILED"
     if "no speech detected" in msg:
+        return "NO_SPEECH"
+    if "srt file is empty" in msg or "transcript could not be parsed" in msg or "empty transcript" in msg:
         return "NO_SPEECH"
     if "no valid clips" in msg or "no clips" in msg:
         return "ANALYZER_EMPTY"
