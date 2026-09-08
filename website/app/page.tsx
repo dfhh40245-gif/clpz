@@ -1,3 +1,7 @@
+import { AnimatedGradient } from "@/components/animated-gradient";
+import { Brand } from "@/components/brand";
+import { ThemeToggle } from "@/components/theme-toggle";
+
 const features = [
   ["Context before keywords", "A sentence can sound punchy and still make no sense alone. CLPZ scores the setup, hook, payoff, and standalone clarity together."],
   ["An editor in the loop", "Every suggestion remains editable. Move the cut, fix a caption, change the crop, or restore the original without changing tools."],
@@ -12,12 +16,13 @@ function PearlLink({ href, children, small=false }: { href:string; children:Reac
 export default function Home() {
   return <main>
     <nav className="nav shell" aria-label="Primary navigation">
-      <a className="brand" href="#top" aria-label="CLPZ home"><span className="brand-mark"><i>C</i></span><span>CLPZ</span></a>
+      <Brand href="#top" />
       <div className="nav-links"><a href="#showcase">Showcase</a><a href="#inside">Inside CLPZ</a><a href="#get-clpz">Get CLPZ</a></div>
-      <div className="nav-actions"><a href="/login">Sign in</a><a className="nav-download" href="/download">Download <Arrow /></a></div>
+      <div className="nav-actions"><ThemeToggle /><a href="/login">Sign in</a><a className="nav-download" href="/download">Download <Arrow /></a></div>
     </nav>
 
     <section className="hero shell" id="top">
+      <AnimatedGradient className="hero-gradient" />
       <div className="hero-copy">
         <p className="kicker"><span /> Desktop video studio</p>
         <h1>Find the clip<br />inside the video.</h1>
@@ -75,6 +80,6 @@ export default function Home() {
 
     <section className="get shell" id="get-clpz"><div className="get-card"><div><p className="section-index">04 / GET CLPZ</p><h2>Your footage stays local.<br />Your purchase stays simple.</h2><p>Purchase securely through Gumroad, keep the receipt in your inbox, and download the Windows app from a versioned release.</p></div><div className="purchase"><span className="purchase-label">DESKTOP LICENSE</span><strong>Available on Gumroad</strong><PearlLink href="/buy" small>Buy CLPZ</PearlLink><a className="text-link" href="/download">Already have it? Download the app →</a></div></div></section>
 
-    <footer className="footer shell"><a className="brand" href="#top"><span className="brand-mark"><i>C</i></span><span>CLPZ</span></a><p>Turn long video into the short worth watching.</p><div><a href="/privacy">Privacy</a><a href="/terms">Terms</a><span>© 2026 CLPZ</span></div></footer>
+    <footer className="footer shell"><Brand href="#top" /><p>Turn long video into the short worth watching.</p><div><a href="/privacy">Privacy</a><a href="/terms">Terms</a><span>© 2026 CLPZ</span></div></footer>
   </main>;
 }
