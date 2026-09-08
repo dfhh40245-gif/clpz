@@ -53,6 +53,56 @@ def _email(prefix="rem"):
     return f"{prefix}_{uuid.uuid4().hex[:8]}@test.com"
 
 
+# ── Low-memory / MKL retry behavior ────────────────────────────────
+
+def test_mkl_malloc_transient_failure_retries(monkeypatch):
+    """A transient mkl_malloc failure during model load must retry and succeed.
+
+    Fully hermetic: WhisperModel is replaced by a stub class, so the real
+    ctranslate2 (which itself can fail under memory pressure on this machine)
+    is never loaded.
+    """
+    import pipeline.transcriber as t
+    import faster_whisper
+
+    calls = {"n": 0}
+
+    class StubModel:
+        def __init__(self, *a, **k):
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                raise RuntimeError("mkl_malloc: failed to allocate memory")
+
+    monkeypatch.setattr(faster_whisper, "WhisperModel", StubModel)
+    # Force a fresh model load (no cached global)
+    monkeypatch.setattr(t, "_model", None)
+
+    model = t._get_model()
+    assert model is not None
+    assert calls["n"] == 3, f"expected 3 attempts (2 fail + 1 ok), got {calls['n']}"
+
+
+def test_mkl_malloc_persistent_failure_raises(monkeypatch):
+    """A persistent mkl_malloc failure must raise after retries, not hang or
+    silently continue into parsing/rendering."""
+    import pipeline.transcriber as t
+    import faster_whisper
+
+    calls = {"n": 0}
+
+    class AlwaysFailModel:
+        def __init__(self, *a, **k):
+            calls["n"] += 1
+            raise RuntimeError("mkl_malloc: failed to allocate memory")
+
+    monkeypatch.setattr(faster_whisper, "WhisperModel", AlwaysFailModel)
+    monkeypatch.setattr(t, "_model", None)
+
+    with pytest.raises(RuntimeError, match="mkl_malloc"):
+        t._get_model()
+    assert calls["n"] == 3, f"expected exactly 3 attempts, got {calls['n']}"
+
+
 # ── Idempotency: one logical submission = one job = one charge ─────
 
 
@@ -295,6 +345,57 @@ def test_job_timeout_marks_error(isolated_data, monkeypatch):
 
 
 # ── Filesystem / SQLite consistency ───────────────────────────────
+
+def test_cancelled_survives_restart_not_rewritten_to_error(isolated_data):
+    """A cancelled job must still be 'cancelled' after load_saved_jobs().
+
+    Regression: the restart rehydration path rewrote any non-done/non-error
+    stage (including the terminal 'cancelled') to 'error', erasing the
+    user's cancellation decision.
+    """
+    import config
+    jid = uuid.uuid4().hex[:12]
+    job = {
+        "id": jid,
+        "created_at": time.time(),
+        "started_at": time.time(),
+        "completed_at": None,
+        "failed_at": None,
+        "cancelled_at": time.time(),
+        "input_type": "upload",
+        "url": "",
+        "max_clips": 2,
+        "top_text": "",
+        "user_id": None,
+        "stage": "cancelled",
+        "progress": 0.5,
+        "video": {"path": str(isolated_data / jid / "source.mp4"),
+                  "title": "t", "duration": 10.0},
+        "clips": [],
+        "error": "Cancelled by user.",
+        "error_code": "CANCELLED",
+        "timings": {},
+        "error_code": "CANCELLED",
+        "completed_stages": [],
+    }
+    d = isolated_data / jid
+    d.mkdir(parents=True)
+    (d / "job.json").write_text(json.dumps(job), encoding="utf-8")
+
+    with jobs._lock:
+        jobs.JOBS.clear()
+    jobs.load_saved_jobs()
+    try:
+        restored = jobs.get_job(jid)
+        assert restored is not None, "cancelled job was dropped on restart"
+        assert restored["stage"] == "cancelled", (
+            f"cancelled job rewritten to {restored['stage']!r} on restart"
+        )
+        assert restored.get("error_code") == "CANCELLED"
+    finally:
+        with jobs._lock:
+            jobs.JOBS.clear()
+
 
 def test_cleanup_deletes_sqlite_row(isolated_data):
     import config

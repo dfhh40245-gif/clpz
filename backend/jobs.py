@@ -301,7 +301,11 @@ def load_saved_jobs():
         except (json.JSONDecodeError, OSError):
             continue
 
-        if job.get("stage") not in ("done", "error"):
+        if job.get("stage") == "cancelled":
+            # A cancelled job stays cancelled across restarts — the user's
+            # decision is terminal and must never be rewritten to "error".
+            pass
+        elif job.get("stage") not in ("done", "error"):
             job["stage"] = "error"
             job["error"] = (
                 "Server restarted while this job was running. "
@@ -326,7 +330,10 @@ def load_saved_jobs():
                 db.delete_job(job["id"])
                 db.delete_idempotency_jobs_by_job(job["id"])
                 continue
-            if job.get("stage") not in ("done", "error"):
+            if job.get("stage") == "cancelled":
+                # Terminal user decision: never rewrite to "error" on restart.
+                pass
+            elif job.get("stage") not in ("done", "error"):
                 job["stage"] = "error"
                 job["error"] = (
                     "Server restarted while this job was running. "
@@ -899,7 +906,11 @@ def _run_pipeline(job_id: str):
     except Exception as e:
         traceback.print_exc()
         proc_mod.kill_job(job_id)
-        is_cancelled = "cancelled" in str(e).lower()
+        # Cancellation wins even when the surfaced exception is a side effect
+        # of the kill (e.g. RenderError from terminated ffmpeg): if the user
+        # cancelled this job, the terminal state must be "cancelled".
+        ev = _cancel_events.get(job_id)
+        is_cancelled = bool(ev and ev.is_set()) or "cancelled" in str(e).lower()
         is_timeout = isinstance(e, JobTimeoutError)
         error_code = "CANCELLED" if is_cancelled else ("JOB_TIMEOUT" if is_timeout else _classify_error(str(e)))
         stage = "cancelled" if is_cancelled else "error"
