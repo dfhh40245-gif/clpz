@@ -25,10 +25,10 @@ body{transition:background-color .35s ease,color .35s ease}
 .theme-toggle{width:38px;height:38px;padding:0;display:grid;place-items:center;border:1px solid var(--line);border-radius:50%;background:rgba(255,255,255,.18);color:var(--ink);cursor:pointer;position:relative;transition:transform .25s ease,background .25s ease,border-color .25s ease}
 .theme-toggle:hover{transform:rotate(8deg);border-color:rgba(240,160,48,.65);background:rgba(240,160,48,.1)}
 .theme-toggle svg{position:absolute;width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;transition:opacity .25s ease,transform .35s ease}
-.theme-moon{opacity:1;transform:scale(1) rotate(0)}.theme-sun{opacity:0;transform:scale(.6) rotate(-60deg)}
-.dark .theme-moon{opacity:0;transform:scale(.6) rotate(60deg)}.dark .theme-sun{opacity:1;transform:scale(1) rotate(0)}
+.theme-sun{opacity:1;transform:scale(1) rotate(0)}.theme-moon{opacity:0;transform:scale(.6) rotate(60deg)}
+.dark .theme-sun{opacity:0;transform:scale(.6) rotate(-60deg)}.dark .theme-moon{opacity:1;transform:scale(1) rotate(0)}
 .animated-gradient{position:absolute;inset:0;overflow:hidden;pointer-events:none}.gradient-layer{position:absolute;inset:-12%;transition:opacity .65s ease;will-change:background}.gradient-dark{opacity:0}.dark .gradient-light{opacity:0}.dark .gradient-dark{opacity:1}
-.hero-gradient{inset:0 calc((100vw - 100%)/-2);z-index:-1;opacity:.82}.hero-gradient:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,var(--black) 0,transparent 48%,var(--black) 100%);opacity:.28}
+.hero-gradient{inset:0 calc((100vw - 100%)/-2);z-index:-1;opacity:1}
 .hero:before{display:none}.hero>*:not(.animated-gradient){position:relative;z-index:1}
 :root:not(.dark) .nav-links,:root:not(.dark) .button.quiet{color:#5e574d}:root:not(.dark) .lede,:root:not(.dark) .showcase-copy>p:not(.section-index),:root:not(.dark) .showcase-heading>p{color:#686055}:root:not(.dark) .availability{color:#746b5e}
 :root:not(.dark) .manifesto-copy{color:#746b60}:root:not(.dark) .showcase-number{color:rgba(36,28,18,.12)}:root:not(.dark) .tag-cloud span,:root:not(.dark) .hook-compare>div{border-color:rgba(35,28,19,.18);color:#675e52}:root:not(.dark) .check-list{color:#625a50}
@@ -40,3 +40,15 @@ body{transition:background-color .35s ease,color .35s ease}
 .dark .auth-card{border-color:rgba(255,255,255,.16);background:rgba(12,12,19,.52);box-shadow:0 32px 85px rgba(0,0,0,.42),inset 0 1px rgba(255,255,255,.08)}
 .auth-card>.brand{justify-content:center;margin-bottom:27px}.auth-card>.section-index{margin-bottom:12px}.auth-card h1{font-size:44px;margin:0 0 15px}.auth-card>p:not(.section-index){max-width:330px;margin:0 auto;color:var(--muted)}.auth-card small{color:var(--muted)}.auth-card small a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}.google-button{border-radius:11px;border:1px solid rgba(20,17,13,.1);box-shadow:0 8px 22px rgba(42,26,7,.1);transition:transform .2s ease,box-shadow .2s ease}.google-button:hover{transform:translateY(-1px);box-shadow:0 11px 28px rgba(42,26,7,.15)}
 @media(max-width:680px){.brand-logo img{height:27px}.nav-actions{gap:12px}.theme-toggle{width:36px;height:36px}.auth-card{margin-top:5vh;padding:36px 24px}.auth-card h1{font-size:38px}.hero-gradient{opacity:.66}}
+
+/* Full email/password authentication panel. */
+.auth-card{margin:3vh auto 0;padding:34px 38px 30px;background:rgba(255,255,255,.24)}
+.auth-card>.brand{margin-bottom:17px}.auth-card h1{font-size:34px;margin:0 0 8px;letter-spacing:-.045em}.auth-card>p{max-width:330px;margin:0 auto;color:var(--muted)}.auth-card small{margin-top:16px}
+.auth-tabs{display:grid;grid-template-columns:1fr 1fr;margin:22px 0 20px;padding:4px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.13)}
+.auth-tabs button{height:34px;border:0;border-radius:7px;background:transparent;color:var(--muted);font:600 12px "DM Sans";cursor:pointer}.auth-tabs button.active{background:rgba(255,255,255,.72);color:#211b14;box-shadow:0 3px 10px rgba(30,20,8,.1)}.dark .auth-tabs button.active{background:rgba(255,255,255,.14);color:#fff}
+.auth-form{display:grid;gap:15px;text-align:left}.auth-form label{display:grid;gap:7px}.auth-form label span{color:var(--ink);font-size:11px;font-weight:600}.auth-form label i{color:var(--muted);font-style:normal;font-weight:400}
+.auth-form input{width:100%;height:43px;border:1px solid var(--line);border-radius:8px;padding:0 12px;background:rgba(255,255,255,.36);color:var(--ink);font:500 14px "DM Sans";outline:none}.dark .auth-form input{background:rgba(4,4,9,.28)}.auth-form input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(240,160,48,.12)}
+.auth-submit{height:45px;border:0;border-radius:9px;background:#f0a030;color:#17120b;font:700 13px "DM Sans";cursor:pointer;transition:transform .2s ease,background .2s ease}.auth-submit:hover{background:#f8b54d;transform:translateY(-1px)}.auth-submit:disabled{opacity:.6;cursor:wait}
+.auth-divider{height:34px;display:flex;align-items:center;color:var(--muted);font-size:9px}.auth-divider:before,.auth-divider:after{content:"";height:1px;background:var(--line);flex:1}.auth-divider span{padding:0 12px}.auth-card .google-button{margin-top:0;border-radius:9px}.auth-switch{font-size:11px!important;margin-top:17px!important}.auth-switch button{border:0;background:none;padding:0;color:var(--gold);font:700 11px "DM Sans";text-decoration:underline;cursor:pointer}
+.auth-message{margin:0 0 15px!important;padding:10px;border:1px solid rgba(66,170,87,.35);border-radius:8px;background:rgba(66,170,87,.12);color:#2a7c3c!important;font-size:11px}.dark .auth-message{color:#8bdd9c!important}
+@media(max-width:680px){.auth-card{margin-top:2vh;padding:28px 22px}.auth-card h1{font-size:32px}.auth-tabs{margin-block:18px 16px}.auth-form{gap:12px}}
