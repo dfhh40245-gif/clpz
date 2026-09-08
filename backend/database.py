@@ -176,6 +176,22 @@ CREATE TABLE IF NOT EXISTS idempotency_jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_idemjob_created ON idempotency_jobs(created_at);
 CREATE INDEX IF NOT EXISTS idx_idemjob_job ON idempotency_jobs(job_id);
+
+CREATE TABLE IF NOT EXISTS payments (
+    id TEXT PRIMARY KEY,
+    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL DEFAULT 'gumroad',
+    external_id TEXT NOT NULL,
+    product_id TEXT NOT NULL DEFAULT '',
+    amount_cents INTEGER NOT NULL DEFAULT 0,
+    currency TEXT NOT NULL DEFAULT 'usd',
+    status TEXT NOT NULL DEFAULT 'paid',
+    raw_json TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL,
+    UNIQUE (provider, external_id)
+);
+CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
+CREATE INDEX IF NOT EXISTS idx_payments_external ON payments(provider, external_id);
 """
 
 # Lightweight ordered migrations.  ``PRAGMA user_version`` is the applied
@@ -418,6 +434,31 @@ def refund_credits(user_id: str, amount: int, related_id: str = "", reason: str 
         )
         _log_txn(conn, user_id, amount, "refund",
                  reason or "Refund for failed processing",
+                 related_id=related_id)
+        _safe_commit(conn)
+    return new_balance
+
+
+def subtract_credits(user_id: str, amount: int, related_id: str = "",
+                     reason: str = "") -> int:
+    """Subtract credits (e.g. Gumroad purchase reversal). Never below zero.
+
+    Logs a negative transaction so the ledger stays auditable.
+    """
+    if amount <= 0:
+        return get_credit_balance(user_id)
+
+    with _write() as conn:
+        row = conn.execute("SELECT balance FROM credits WHERE user_id = ?", (user_id,)).fetchone()
+        current = max(0, row["balance"]) if row else 0
+        new_balance = max(0, current - amount)
+        conn.execute(
+            "INSERT INTO credits (user_id, balance) VALUES (?, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET balance = excluded.balance",
+            (user_id, new_balance),
+        )
+        _log_txn(conn, user_id, -amount, "refund",
+                 reason or "Refund (purchase reversal)",
                  related_id=related_id)
         _safe_commit(conn)
     return new_balance
@@ -987,11 +1028,92 @@ def get_stats() -> dict:
         credit_rows = conn.execute("SELECT COUNT(*) FROM credits").fetchone()[0]
         txns = conn.execute("SELECT COUNT(*) FROM credit_transactions").fetchone()[0]
         jobs = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+        payments = conn.execute("SELECT COUNT(*) FROM payments").fetchone()[0]
     return {
         "users": users,
         "sessions": sessions,
         "credit_accounts": credit_rows,
         "transactions": txns,
         "jobs": jobs,
+        "payments": payments,
         "db_size_mb": round(_DB_PATH.stat().st_size / 1024 / 1024, 2) if _DB_PATH.exists() else 0,
     }
+
+
+# ── Payments (Gumroad & other providers) ──────────────────────────
+
+
+def record_payment(user_id: str | None, provider: str, external_id: str,
+                   product_id: str = "", amount_cents: int = 0,
+                   currency: str = "usd", status: str = "paid",
+                   raw_json: str = "") -> tuple[bool, str]:
+    """Record an external payment exactly once.
+
+    Returns (created, payment_id). If a payment with the same
+    (provider, external_id) already exists, returns (False, existing_id)
+    and does NOT modify anything — this is the idempotency guard that
+    prevents duplicate webhooks from granting credits twice.
+
+    user_id may be None for purchases that could not be linked to a CLPZ
+    account (audit trail only, no FK enforced).
+    """
+    import secrets as _secrets
+    payment_id = _secrets.token_hex(8)
+    with _write() as conn:
+        existing = conn.execute(
+            "SELECT id FROM payments WHERE provider = ? AND external_id = ?",
+            (provider, external_id),
+        ).fetchone()
+        if existing:
+            return False, existing["id"]
+        conn.execute(
+            "INSERT INTO payments (id, user_id, provider, external_id, product_id, "
+            "amount_cents, currency, status, raw_json, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (payment_id, user_id, provider, external_id, product_id,
+             amount_cents, currency, status, raw_json, time.time()),
+        )
+        _safe_commit(conn)
+    return True, payment_id
+
+
+def get_payment(provider: str, external_id: str) -> dict | None:
+    """Look up a payment by provider + external id."""
+    with _write() as conn:
+        row = conn.execute(
+            "SELECT * FROM payments WHERE provider = ? AND external_id = ?",
+            (provider, external_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_payment_status(provider: str, external_id: str, status: str) -> bool:
+    """Transition a payment's status (e.g. paid -> refunded).
+
+    Returns True if the status actually changed, False if it was already
+    in the target state (idempotent transition — safe on duplicate
+    refund/chargeback webhooks).
+    """
+    with _write() as conn:
+        row = conn.execute(
+            "SELECT id, status FROM payments WHERE provider = ? AND external_id = ?",
+            (provider, external_id),
+        ).fetchone()
+        if not row or row["status"] == status:
+            return False
+        conn.execute(
+            "UPDATE payments SET status = ? WHERE provider = ? AND external_id = ?",
+            (status, provider, external_id),
+        )
+        _safe_commit(conn)
+    return True
+
+
+def get_user_payments(user_id: str, limit: int = 50) -> list[dict]:
+    """Return payments for a user (newest first)."""
+    with _write() as conn:
+        rows = conn.execute(
+            "SELECT * FROM payments WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+            (user_id, limit),
+        ).fetchall()
+    return [dict(r) for r in rows]

@@ -18,6 +18,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 import auth as auth_mod, config, credits as credits_mod, jobs
 import email_service
+import gumroad as gumroad_mod
 
 class _RateLimiter:
     """Sliding-window rate limiter with bounded memory.
@@ -481,6 +482,27 @@ def credit_balance(user_id: str = Depends(get_current_user)):
 def credit_transactions(user_id: str = Depends(get_current_user)):
     txns = credits_mod.get_transactions(user_id)
     return {"transactions": txns}
+
+
+# ── Gumroad webhook ──────────────────────────────────────────────
+
+@app.post("/api/payments/gumroad/webhook")
+async def gumroad_webhook(request: Request):
+    """Receive Gumroad ping webhooks.
+
+    Security: HMAC-SHA256 signature verification over the raw body.
+    Idempotency: duplicate sale ids are recorded once — credits are never
+    granted twice for the same Gumroad transaction.
+    """
+    raw = await request.body()
+    signature = request.headers.get("x-gumroad-signature", "")
+    if not gumroad_mod.verify_signature(raw, signature):
+        raise HTTPException(status_code=403, detail="Invalid webhook signature")
+    data = gumroad_mod._parse_payload(raw)
+    if data is None:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+    result = gumroad_mod.process_webhook(data)
+    return {"ok": True, **result}
 
 
 class JobRequest(BaseModel):
