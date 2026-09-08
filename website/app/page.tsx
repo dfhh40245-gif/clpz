@@ -1,6 +1,7 @@
 import { AnimatedGradient } from "@/components/animated-gradient";
 import { Brand } from "@/components/brand";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SmokeyBackground } from "@/components/smokey-background";
 
 const features = [
   ["Context before keywords", "A sentence can sound punchy and still make no sense alone. CLPZ scores the setup, hook, payoff, and standalone clarity together."],
@@ -23,6 +24,7 @@ export default function Home() {
 
     <section className="hero shell" id="top">
       <AnimatedGradient className="hero-gradient" />
+      <SmokeyBackground className="hero-smoke" />
       <div className="hero-copy">
         <p className="kicker"><span /> Desktop video studio</p>
         <h1>Find the clip<br />inside the video.</h1>

@@ -12,7 +12,7 @@ for(float i=1.0;i<8.0;i++){distortion.x+=0.5/i*cos(i*2.0*distortion.y+time+rippl
 float wave=abs(sin(distortion.x+distortion.y+time));float glow=smoothstep(0.9,0.2,wave);fragColor=vec4(u_color*glow,1.0);}
 void main(){mainImage(gl_FragColor,gl_FragCoord.xy);}`;
 
-export function SmokeyBackground() {
+export function SmokeyBackground({ className = "" }: { className?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mouseRef = useRef({ x: 0, y: 0, active: false });
 
@@ -29,10 +29,13 @@ export function SmokeyBackground() {
     const position=gl.getAttribLocation(program,"a_position");gl.enableVertexAttribArray(position);gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
     const resolution=gl.getUniformLocation(program,"iResolution"), time=gl.getUniformLocation(program,"iTime"), mouse=gl.getUniformLocation(program,"iMouse"), color=gl.getUniformLocation(program,"u_color");
     gl.uniform3f(color,240/255,160/255,48/255);
+    const trackPointer=(event:PointerEvent)=>{const rect=canvas.getBoundingClientRect();mouseRef.current={x:event.clientX-rect.left,y:event.clientY-rect.top,active:true};};
+    const clearPointer=()=>{mouseRef.current.active=false;};
+    window.addEventListener("pointermove",trackPointer,{passive:true});window.addEventListener("pointerleave",clearPointer);
     const start=performance.now();let frame=0;
     const render=(now:number)=>{const ratio=Math.min(devicePixelRatio||1,2),width=Math.round(canvas.clientWidth*ratio),height=Math.round(canvas.clientHeight*ratio);if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}gl.viewport(0,0,width,height);gl.uniform2f(resolution,width,height);gl.uniform1f(time,(now-start)/1000);const m=mouseRef.current;gl.uniform2f(mouse,m.active?m.x*ratio:width/2,m.active?height-m.y*ratio:height/2);gl.drawArrays(gl.TRIANGLES,0,6);frame=requestAnimationFrame(render);};
-    frame=requestAnimationFrame(render);return()=>{cancelAnimationFrame(frame);gl.deleteProgram(program);gl.deleteShader(vertex);gl.deleteShader(fragment);};
+    frame=requestAnimationFrame(render);return()=>{cancelAnimationFrame(frame);window.removeEventListener("pointermove",trackPointer);window.removeEventListener("pointerleave",clearPointer);gl.deleteProgram(program);gl.deleteShader(vertex);gl.deleteShader(fragment);};
   }, []);
 
-  return <div className="smokey-background" aria-hidden="true"><canvas ref={canvasRef} onPointerMove={event=>{const rect=event.currentTarget.getBoundingClientRect();mouseRef.current={x:event.clientX-rect.left,y:event.clientY-rect.top,active:true};}} onPointerLeave={()=>{mouseRef.current.active=false;}} /></div>;
+  return <div className={`smokey-background ${className}`} aria-hidden="true"><canvas ref={canvasRef} /></div>;
 }
