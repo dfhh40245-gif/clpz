@@ -1,0 +1,4 @@
+{
+  "stage": "error",
+  "error": "cannot access local variable 'transcript' where it is not associated with a value"
+}

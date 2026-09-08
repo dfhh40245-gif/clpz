@@ -1,0 +1,3 @@
+# Deploy only the public Next.js storefront from this multi-application repository.
+# The root CLI deployment is intentionally disabled. Deploy from `website/`.
+*

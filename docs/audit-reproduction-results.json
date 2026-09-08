@@ -1,0 +1,45 @@
+{
+  "unverified_admin": {
+    "verified": false,
+    "admin_status": 200
+  },
+  "reset_bruteforce": {
+    "attempts": 15,
+    "statuses": [
+      401
+    ]
+  },
+  "duplicate_refund": "NameError(\"name 'get_credit_balance' is not defined\")",
+  "cross_user_idempotency": {
+    "same_job": true,
+    "anonymous_status": 200,
+    "read_status": 404
+  },
+  "anonymous_jobs": {
+    "create_status": 200,
+    "credits_remaining": null,
+    "cross_origin_cancel_status": 200,
+    "arbitrary_host_status": 200
+  },
+  "edit_normal": {
+    "status": 200,
+    "detail": "success"
+  },
+  "edit_muted": {
+    "status": 500,
+    "detail": "Edited output invalid: No audio stream found."
+  },
+  "edit_quarter_speed": {
+    "status": 500,
+    "detail": "Edit render failed: FFmpeg failed: :1[0x2](und): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 70 kb/s (default)\n    Metadata:\n      handler_name    : SoundHandler\n[Parsed_atempo_0 @ 000001df580fea80] Value 0.250000 for parameter 'tempo' out of range [0.5 - 100]\n[fc#-1 @ 000001df580fe580] Error applying option 'tempo' to filter 'atempo': Result too large\nError opening output file C:\\Users\\oSSS\\Desktop\\clpz-actual\\backend\\clpz-audit-zktuo2tv\\3b972e50ecb8\\clip_0_edited.mp4.\nError opening output files: Result too large\n"
+  },
+  "edit_apostrophe": {
+    "status": 200,
+    "detail": "success"
+  },
+  "overlap_merge": {
+    "expected_words": 2,
+    "actual_words": 4,
+    "actual_segments": 2
+  }
+}

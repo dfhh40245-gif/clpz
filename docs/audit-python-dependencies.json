@@ -1,0 +1,259 @@
+{
+  "scope": "Installed dependency closure for backend requirements plus multipart, requests and desktop pywebview; current machine, not a locked release environment. Optional extras may be absent.",
+  "missing": [],
+  "packages": [
+    {
+      "name": "annotated-doc",
+      "version": "0.0.5",
+      "vulnerabilities": []
+    },
+    {
+      "name": "annotated-types",
+      "version": "0.8.0",
+      "vulnerabilities": []
+    },
+    {
+      "name": "anyio",
+      "version": "4.14.2",
+      "vulnerabilities": []
+    },
+    {
+      "name": "av",
+      "version": "18.1.0",
+      "vulnerabilities": []
+    },
+    {
+      "name": "bottle",
+      "version": "0.13.4",
+      "vulnerabilities": []
+    },
+    {
+      "name": "certifi",
+      "version": "2026.7.22",
+      "vulnerabilities": []
+    },
+    {
+      "name": "cffi",
+      "version": "2.1.1",
+      "vulnerabilities": []
+    },
+    {
+      "name": "charset-normalizer",
+      "version": "3.5.1",
+      "vulnerabilities": []
+    },
+    {
+      "name": "click",
+      "version": "8.1.8",
+      "vulnerabilities": [
+        {
+          "id": "PYSEC-2026-2132",
+          "aliases": [
+            "CVE-2026-7246",
+            "GHSA-47fr-3ffg-hgmw"
+          ],
+          "fixed_in": [
+            "8.3.3"
+          ],
+          "link": "https://osv.dev/vulnerability/PYSEC-2026-2132",
+          "summary": "Pallets Click, versions 8.3.2 and below, contain a command injection vulnerability in the click.edit() function, allowing attackers to pass arbitrary OS commands from an unprivileged account."
+        }
+      ]
+    },
+    {
+      "name": "clr-loader",
+      "version": "0.3.1",
+      "vulnerabilities": []
+    },
+    {
+      "name": "colorama",
+      "version": "0.4.6",
+      "vulnerabilities": []
+    },
+    {
+      "name": "ctranslate2",
+      "version": "4.8.1",
+      "vulnerabilities": []
+    },
+    {
+      "name": "fastapi",
+      "version": "0.141.1",
+      "vulnerabilities": []
+    },
+    {
+      "name": "faster-whisper",
+      "version": "1.2.1",
+      "vulnerabilities": []
+    },
+    {
+      "name": "filelock",
+      "version": "3.32.3",
+      "vulnerabilities": []
+    },
+    {
+      "name": "flatbuffers",
+      "version": "25.12.19",
+      "vulnerabilities": []
+    },
+    {
+      "name": "fsspec",
+      "version": "2026.7.0",
+      "vulnerabilities": []
+    },
+    {
+      "name": "h11",
+      "version": "0.16.0",
+      "vulnerabilities": []
+    },
+    {
+      "name": "hf-xet",
+      "version": "1.6.0",
+      "vulnerabilities": []
+    },
+    {
+      "name": "httpcore",
+      "version": "1.0.9",
+      "vulnerabilities": []
+    },
+    {
+      "name": "httpx",
+      "version": "0.28.1",
+      "vulnerabilities": []
+    },
+    {
+      "name": "huggingface-hub",
+      "version": "1.28.0",
+      "vulnerabilities": []
+    },
+    {
+      "name": "idna",
+      "version": "3.19",
+      "vulnerabilities": []
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.2",
+      "vulnerabilities": []
+    },
+    {
+      "name": "onnxruntime",
+      "version": "1.29.0",
+      "vulnerabilities": []
+    },
+    {
+      "name": "opencv-python-headless",
+      "version": "4.14.0.94",
+      "vulnerabilities": []
+    },
+    {
+      "name": "packaging",
+      "version": "26.3",
+      "vulnerabilities": []
+    },
+    {
+      "name": "protobuf",
+      "version": "7.35.1",
+      "vulnerabilities": []
+    },
+    {
+      "name": "proxy-tools",
+      "version": "0.1.0",
+      "vulnerabilities": []
+    },
+    {
+      "name": "psutil",
+      "version": "7.2.2",
+      "vulnerabilities": []
+    },
+    {
+      "name": "pycparser",
+      "version": "3.0",
+      "vulnerabilities": []
+    },
+    {
+      "name": "pydantic",
+      "version": "2.13.4",
+      "vulnerabilities": []
+    },
+    {
+      "name": "pydantic-core",
+      "version": "2.46.4",
+      "vulnerabilities": []
+    },
+    {
+      "name": "python-multipart",
+      "version": "0.0.32",
+      "vulnerabilities": []
+    },
+    {
+      "name": "pythonnet",
+      "version": "3.1.0",
+      "vulnerabilities": []
+    },
+    {
+      "name": "pywebview",
+      "version": "6.2.1",
+      "vulnerabilities": []
+    },
+    {
+      "name": "pyyaml",
+      "version": "6.0.3",
+      "vulnerabilities": []
+    },
+    {
+      "name": "requests",
+      "version": "2.34.2",
+      "vulnerabilities": []
+    },
+    {
+      "name": "resend",
+      "version": "2.43.0",
+      "vulnerabilities": []
+    },
+    {
+      "name": "setuptools",
+      "version": "84.0.0",
+      "vulnerabilities": []
+    },
+    {
+      "name": "starlette",
+      "version": "1.6.0",
+      "vulnerabilities": []
+    },
+    {
+      "name": "tokenizers",
+      "version": "0.23.1",
+      "vulnerabilities": []
+    },
+    {
+      "name": "tqdm",
+      "version": "4.70.0",
+      "vulnerabilities": []
+    },
+    {
+      "name": "typing-extensions",
+      "version": "4.16.0",
+      "vulnerabilities": []
+    },
+    {
+      "name": "typing-inspection",
+      "version": "0.4.4",
+      "vulnerabilities": []
+    },
+    {
+      "name": "urllib3",
+      "version": "2.7.0",
+      "vulnerabilities": []
+    },
+    {
+      "name": "uvicorn",
+      "version": "0.52.3",
+      "vulnerabilities": []
+    },
+    {
+      "name": "yt-dlp",
+      "version": "2026.7.4",
+      "vulnerabilities": []
+    }
+  ]
+}

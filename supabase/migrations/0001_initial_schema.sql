@@ -244,3 +244,5 @@ $$;
 
 -- Only the service role may execute the grant function.
 revoke execute on function public.grant_credits(uuid, integer, text, text, text, text) from anon, authenticated;
+revoke execute on function public.grant_credits(uuid, integer, text, text, text, text) from public;
+grant execute on function public.grant_credits(uuid, integer, text, text, text, text) to service_role;

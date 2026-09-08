@@ -32,6 +32,10 @@ packaging/out/
 
 # Node
 node_modules/
+.next/
+
+# Local visual QA captures
+docs/storefront-*.png
 
 # Agent/tooling local state (never push)
 .freebuff/
@@ -51,3 +55,5 @@ workflow-upgrade.txt
 .DS_Store
 Thumbs.db
 phaseb/*.mp4
+.vercel/
+website/.env*

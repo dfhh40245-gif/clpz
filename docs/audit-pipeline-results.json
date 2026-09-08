@@ -1,0 +1,36 @@
+{
+  "elapsed_seconds": 10.2,
+  "stage": "done",
+  "error": null,
+  "timings": {
+    "transcribe": 3.7,
+    "parse": 0.0,
+    "analyze": 0.0,
+    "render": 5.5
+  },
+  "data_dir": "C:\\Users\\oSSS\\Desktop\\clpz-actual\\backend\\clpz-pipeline-audit-9y5d639i",
+  "clips": [
+    {
+      "status": "done",
+      "duration": 17.44,
+      "error": null,
+      "validation": {
+        "valid": true,
+        "error": "",
+        "duration": 17.44,
+        "size": 605689,
+        "width": 1080,
+        "height": 1920,
+        "video_codec": "h264",
+        "audio_codec": "aac",
+        "pix_fmt": "yuv420p",
+        "decoded_frame": true
+      }
+    }
+  ],
+  "media_range": {
+    "status": 206,
+    "bytes": 100,
+    "content_range": "bytes 0-99/605689"
+  }
+}

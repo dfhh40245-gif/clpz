@@ -1,0 +1,12 @@
+{
+  "payment_crash_retry": {
+    "payment_recorded": true,
+    "retry_created": false,
+    "credits": 0
+  },
+  "email_resolution_unverified": {
+    "verified": false,
+    "resolved": true
+  },
+  "second_backup": "OperationalError('output file already exists')"
+}
