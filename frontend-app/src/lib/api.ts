@@ -105,10 +105,11 @@ export const jobsApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, max_clips, idempotency_key }),
     }),
-  upload: (file: File, max_clips = 5) => {
+  upload: (file: File, max_clips = 5, idempotency_key?: string) => {
     const b = new FormData();
     b.append('file', file);
     b.append('max_clips', String(max_clips));
+    if (idempotency_key) b.append('idempotency_key', idempotency_key);
     return api<{ job_id: string; credits_remaining?: number }>('/api/jobs/upload', {
       method: 'POST',
       body: b,

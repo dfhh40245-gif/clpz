@@ -3,7 +3,11 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-DEBUG = os.getenv("CLPZ_DEBUG", "1") == "1"
+# Secure by default: debug mode (relaxed rate limits, dev-only code leak in
+# verification responses, /api/jobs/reset endpoint) must be opted INTO via
+# CLPZ_DEBUG=1.  The packaged desktop launcher and the test suite set it
+# explicitly; a bare server deployment now runs with production settings.
+DEBUG = os.getenv("CLPZ_DEBUG", "0") == "1"
 DATA_DIR = Path(os.getenv("CLIPFORGE_DATA", BASE_DIR / "data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -50,10 +54,28 @@ CLIP_MAX_SECONDS = float(os.getenv("CLIP_MAX_SECONDS", "60"))
 # ---- Performance ----
 # Clips rendered in parallel. 1 for low-RAM machines (8GB), 2 for 16GB+.
 RENDER_WORKERS = int(os.getenv("RENDER_WORKERS", "1"))
-# Retention is opt-in.  A restart must not silently remove completed projects.
-# Use the Clear projects action, or set a positive value, when automatic
-# retention cleanup is genuinely desired.
-AUTO_CLEANUP_HOURS = int(os.getenv("CLIPFORGE_AUTO_CLEANUP_HOURS", "168"))  # 7 days default
+# Absolute deadline for a single job (download + transcribe + render).
+# Whisper runs in-process, so this is the safety net that turns a hung job
+# into a controlled failure even when no subprocess can be interrupted.
+JOB_TIMEOUT_SECONDS = float(os.getenv("JOB_TIMEOUT_SECONDS", "3600"))
+# How often background maintenance (session/idempotency/cancel-event pruning)
+# runs.  A restart never removes completed projects automatically.
+MAINTENANCE_INTERVAL_SECONDS = int(os.getenv("MAINTENANCE_INTERVAL_SECONDS", "3600"))
+# Automatic retention cleanup is opt-in: 0 disables it (a restart never
+# silently removes completed projects).  Set a positive value (hours) to
+# enable automatic cleanup of old done/error jobs.
+AUTO_CLEANUP_HOURS = int(os.getenv("CLIPFORGE_AUTO_CLEANUP_HOURS", "0"))
+# Comma-separated list of trusted reverse-proxy IPs.  ``X-Forwarded-For`` is
+# only honored when the socket peer is in this list; otherwise the actual
+# peer address is used for rate limiting, so clients cannot spoof their
+# identity by setting arbitrary headers.
+TRUSTED_PROXIES = set(
+    p.strip() for p in os.getenv("CLPZ_TRUSTED_PROXIES", "").split(",") if p.strip()
+)
+# Force the session cookie's Secure flag even over plain HTTP.  Default: the
+# cookie is Secure only when the request arrived over HTTPS (loopback HTTP
+# works for every client without weakening an externally-exposed deployment).
+FORCE_SECURE_COOKIES = os.getenv("CLPZ_FORCE_SECURE_COOKIES", "0") == "1"
 
 # ---- Output video ----
 OUT_WIDTH = 1080

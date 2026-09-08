@@ -53,7 +53,7 @@ export default function Landing() {
           {[
             { value: '100% Local', label: 'Processing' },
             { value: '9:16', label: 'Auto-reframed' },
-            { value: '< 2 min', label: 'Typical time' },
+            { value: 'On-device', label: 'Transcription' },
             { value: 'Word-level', label: 'Captions' },
           ].map((stat, i) => (
             <div key={stat.label} className="flex items-center gap-10">

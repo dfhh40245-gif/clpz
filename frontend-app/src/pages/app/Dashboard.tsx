@@ -9,6 +9,15 @@ import Badge from '../../components/ui/Badge';
 import { Upload, Link as LinkIcon, Scissors, ArrowRight, Play } from 'lucide-react';
 import { motion } from 'framer-motion';
 
+// One stable idempotency key per submission attempt: retries of the same
+// logical submit reuse the key, so the server deduplicates to one job and at
+// most one charge/refund. Never derived from the current second.
+function newIdemKey(): string {
+  return typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `idem-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function formatTime(s: number | null | undefined): string {
   if (!Number.isFinite(s)) return '—';
   const v = Number(s);
@@ -44,8 +53,9 @@ export default function Dashboard() {
   const forgeUrl = async () => {
     if (!url.trim()) { setError('Paste a YouTube URL or choose a file.'); return; }
     setError(''); setForging(true);
+    const idemKey = newIdemKey();
     try {
-      const r = await jobsApi.createYouTube(url.trim());
+      const r = await jobsApi.createYouTube(url.trim(), 5, idemKey);
       navigate(`/processing/${r.job_id}`);
     } catch (e: any) {
       setError(e.message);
@@ -55,8 +65,9 @@ export default function Dashboard() {
   const forgeFile = async () => {
     if (!file) return;
     setError(''); setForging(true);
+    const idemKey = newIdemKey();
     try {
-      const r = await jobsApi.upload(file);
+      const r = await jobsApi.upload(file, 5, idemKey);
       navigate(`/processing/${r.job_id}`);
     } catch (e: any) {
       setError(e.message);

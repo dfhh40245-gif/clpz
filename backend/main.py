@@ -1,13 +1,18 @@
 """CLPZ API."""
 from __future__ import annotations
 
-import os, re, secrets, shutil, subprocess, threading, time
+import logging
+import math
+import os, re, secrets, shutil, subprocess, threading, time, uuid
 from pathlib import Path
 
+log = logging.getLogger("clpz.api")
+
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, File, Form
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from starlette.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -15,24 +20,53 @@ import auth as auth_mod, config, credits as credits_mod, jobs
 import email_service
 
 class _RateLimiter:
-    def __init__(s,mr=20,ws=60): s.mr=mr;s.ws=ws;s.a={};s.l=threading.Lock()
+    """Sliding-window rate limiter with bounded memory.
+
+    Buckets are pruned whenever ``is_rate_limited`` runs into a stale bucket
+    and at least every ``_PRUNE_EVERY`` calls, so an unbounded number of
+    unique keys cannot grow the dict forever.
+    """
+    _PRUNE_EVERY = 256
+
+    def __init__(s,mr=20,ws=60):
+        s.mr=mr;s.ws=ws;s.a={};s.l=threading.Lock();s._calls=0
     def is_rate_limited(s,k):
         n=time.monotonic()
         with s.l:
+            s._calls += 1
             s.a.setdefault(k,[])
             s.a[k]=[t for t in s.a[k] if n-t<s.ws]
             if len(s.a[k])>=s.mr: return True
-            s.a[k].append(n); return False
+            s.a[k].append(n)
+            if s._calls % s._PRUNE_EVERY == 0:
+                stale=[kk for kk,vv in s.a.items() if not vv or n-vv[-1]>=s.ws]
+                for kk in stale: s.a.pop(kk, None)
+            return False
+    def prune(s):
+        n=time.monotonic()
+        with s.l:
+            stale=[kk for kk,vv in s.a.items() if not vv or n-vv[-1]>=s.ws]
+            for kk in stale: s.a.pop(kk, None)
 
 # Higher limits in debug mode for testing
 if config.DEBUG:
-    auth_rl=_RateLimiter(1000,60); forge_rl=_RateLimiter(1000,60)
+    auth_rl=_RateLimiter(1000,60); forge_rl=_RateLimiter(1000,60); verify_rl=_RateLimiter(1000,60)
 else:
-    auth_rl=_RateLimiter(10,60); forge_rl=_RateLimiter(5,60)
+    auth_rl=_RateLimiter(10,60); forge_rl=_RateLimiter(5,60); verify_rl=_RateLimiter(5,300)
 
 def _cip(r):
-    f=r.headers.get("x-forwarded-for")
-    return f.split(",")[0].strip() if f else (r.client.host if r.client else "?")
+    """Client IP for rate limiting.
+
+    ``X-Forwarded-For`` is only honored when the request's socket peer is a
+    configured trusted proxy.  Otherwise the real peer address is used, so a
+    client cannot bypass limits by setting arbitrary forwarding headers.
+    """
+    peer = r.client.host if r.client else "?"
+    if peer in config.TRUSTED_PROXIES:
+        f = r.headers.get("x-forwarded-for")
+        if f:
+            return f.split(",")[0].strip()
+    return peer
 
 ALLOWED=[o.strip() for o in os.getenv("CLPZ_ALLOWED_ORIGINS","http://localhost:8000,http://127.0.0.1:8000").split(",") if o.strip()]
 
@@ -47,6 +81,20 @@ class SecMid(BaseHTTPMiddleware):
         resp.headers["X-Frame-Options"]="DENY"
         resp.headers["Referrer-Policy"]="strict-origin-when-cross-origin"
         return resp
+
+def _cookie_secure(request: Request) -> bool:
+    """Whether the session cookie should carry the Secure flag.
+
+    Loopback desktop mode serves plain HTTP on 127.0.0.1; forcing Secure
+    there breaks every non-browser client (and is pointless — the traffic
+    never leaves the machine).  The flag is set based on the actual request
+    scheme, so an HTTPS deployment still gets a Secure cookie.  Set
+    CLPZ_FORCE_SECURE_COOKIES=1 to force it regardless.
+    """
+    if config.FORCE_SECURE_COOKIES:
+        return True
+    return request.url.scheme == "https"
+
 
 def _get_session_user(request: Request) -> str | None:
     """Extract user_id from session cookie. Returns None if not logged in."""
@@ -101,6 +149,20 @@ def optional_user(request: Request) -> str | None:
     return _get_session_user(request)
 
 
+ADMIN_EMAIL = os.getenv("CLPZ_ADMIN_EMAIL", "")
+
+
+def require_admin(request: Request) -> str:
+    """Dependency: require admin authorization. Returns user_id."""
+    user_id = _get_session_user(request)
+    if not user_id:
+        raise HTTPException(401, "Please log in.")
+    user = auth_mod.get_user_by_id(user_id)
+    if not user or user.get("email") != ADMIN_EMAIL:
+        raise HTTPException(403, "Admin access required.")
+    return user_id
+
+
 def _check_binaries():
     import platform
     import shutil
@@ -144,6 +206,34 @@ app.add_middleware(
 app.add_middleware(SecMid)
 
 
+def _json_safe(value):
+    """Recursively replace non-finite floats (NaN/Infinity) with strings so a
+    pydantic validation error mentioning a raw input like ``inf`` can still be
+    serialized. Without this, FastAPI's 422 renderer itself raises
+    ``ValueError: Out of range float values are not JSON compliant`` and the
+    request ends up as a 500 instead of a proper validation response."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return repr(value)
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_handler(request: Request, exc: RequestValidationError):
+    # jsonable_encoder first: it stringifies pydantic's ctx exceptions (e.g.
+    # the ValueError from a model_validator) and drops unserializable objects.
+    # _json_safe second: it replaces non-finite floats so the response can
+    # always be serialized even when the rejected input was NaN/Infinity.
+    from fastapi.encoders import jsonable_encoder
+    return JSONResponse(
+        status_code=422,
+        content={"detail": _json_safe(jsonable_encoder(exc.errors()))},
+    )
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     """Catch-all: log the traceback server-side, return a generic 500."""
@@ -162,6 +252,21 @@ db.migrate_from_json()
 print("CLPZ: Database ready.")
 
 jobs.load_saved_jobs()
+jobs.start_maintenance()
+
+
+def _limiter_prune_loop():
+    """Background thread: keep rate-limiter memory bounded on long uptime."""
+    while True:
+        time.sleep(max(60, config.MAINTENANCE_INTERVAL_SECONDS))
+        for lim in (auth_rl, forge_rl, verify_rl):
+            try:
+                lim.prune()
+            except Exception:
+                pass
+
+if os.environ.get("CLPZ_DISABLE_MAINTENANCE") != "1":
+    threading.Thread(target=_limiter_prune_loop, daemon=True, name="clpz-limiter-prune").start()
 
 # The original dashboard remains in frontend/index.html as a fallback.  The
 # production shell below is the Manus-inspired, API-backed interface.
@@ -223,7 +328,7 @@ def signup(request: Request, req: SignupRequest):
     token = auth_mod.create_session(user["id"])
     user["email_verified"] = False
     resp = JSONResponse({"user": user, "credits": credits_mod.get_balance(user["id"]), "email_verified": False})
-    resp.set_cookie("clpz_session", token, httponly=True, samesite="strict", secure=not config.DEBUG, max_age=86400 * 7)
+    resp.set_cookie("clpz_session", token, httponly=True, samesite="strict", secure=_cookie_secure(request), max_age=86400 * 7)
     return resp
 
 
@@ -242,7 +347,7 @@ def login(request: Request, req: LoginRequest):
     token = auth_mod.create_session(user["id"])
     user["email_verified"] = email_verified
     resp = JSONResponse({"user": user, "credits": balance, "email_verified": email_verified})
-    resp.set_cookie("clpz_session", token, httponly=True, samesite="strict", secure=not config.DEBUG, max_age=86400 * 7)
+    resp.set_cookie("clpz_session", token, httponly=True, samesite="strict", secure=_cookie_secure(request), max_age=86400 * 7)
     return resp
 
 
@@ -282,8 +387,10 @@ def reset_password(req: ResetRequest):
 # ── Email verification endpoints --------------------------------
 
 @app.post("/api/auth/request-verification")
-def request_verification(req: RequestVerificationRequest):
+def request_verification(request: Request, req: RequestVerificationRequest):
     """Send a verification code to the user's email."""
+    if verify_rl.is_rate_limited("verif:" + _cip(request)):
+        raise HTTPException(429, "Too many requests. Please try again later.")
     email = req.email.strip().lower()
     user = auth_mod.get_user_by_email(email)
     if not user:
@@ -299,8 +406,10 @@ def request_verification(req: RequestVerificationRequest):
 
 
 @app.post("/api/auth/verify-email")
-def verify_email(req: VerifyRequest):
+def verify_email(request: Request, req: VerifyRequest):
     """Verify email with 6-digit code."""
+    if verify_rl.is_rate_limited("verify:" + _cip(request)):
+        raise HTTPException(429, "Too many requests. Please try again later.")
     email = req.email.strip().lower()
     user = auth_mod.get_user_by_email(email)
     if not user:
@@ -325,8 +434,10 @@ class ResetWithCodeRequest(BaseModel):
 
 
 @app.post("/api/auth/forgot-password")
-def forgot_password(req: ForgotPasswordRequest):
+def forgot_password(request: Request, req: ForgotPasswordRequest):
     """Send a password reset code to the user's email."""
+    if verify_rl.is_rate_limited("forgot:" + _cip(request)):
+        raise HTTPException(429, "Too many requests. Please try again later.")
     email = req.email.strip().lower()
     user = auth_mod.get_user_by_email(email)
     if not user:
@@ -341,8 +452,10 @@ def forgot_password(req: ForgotPasswordRequest):
 
 
 @app.post("/api/auth/reset-with-code")
-def reset_with_code(req: ResetWithCodeRequest):
+def reset_with_code(request: Request, req: ResetWithCodeRequest):
     """Reset password using a 6-digit code sent via email."""
+    if verify_rl.is_rate_limited("reset:" + _cip(request)):
+        raise HTTPException(429, "Too many requests. Please try again later.")
     email = req.email.strip().lower()
     user = auth_mod.get_user_by_email(email)
     if not user:
@@ -480,46 +593,24 @@ def create_job(req: JobRequest, request: Request):
     if not user_id:
         user_id = _get_session_user(request)
 
-    # Generate idempotency key if not provided
-    idempotency_key = req.idempotency_key
-    if not idempotency_key and user_id:
-        import hashlib
-        idempotency_key = hashlib.sha256(
-            f"{user_id}:{url}:{req.max_clips}:{time.time():.0f}".encode()
-        ).hexdigest()[:16]
+    # Stable idempotency key: the frontend sends one per submission attempt.
+    # When absent, a random key is generated (each such request is a NEW
+    # logical submission).  Keys are NEVER derived from the current second,
+    # so rapid retries cannot collide into duplicate jobs/charges.
+    idempotency_key = req.idempotency_key or uuid.uuid4().hex
 
-    # Charge credits BEFORE creating the job (atomic check-and-deduct)
-    if user_id:
-        ok, remaining = credits_mod.check_and_charge(
-            user_id, credits_mod.COST_PER_FORGE,
-            idempotency_key=idempotency_key
+    job_id, is_new, remaining = jobs.create_job_idempotent(
+        url, req.max_clips, req.top_text,
+        user_id=user_id, idempotency_key=idempotency_key,
+    )
+    if job_id is None:
+        raise HTTPException(
+            402,
+            f"Not enough credits. You need {credits_mod.COST_PER_FORGE} credit(s) "
+            f"but have {remaining}.",
         )
-        if not ok:
-            raise HTTPException(
-                402,
-                f"Not enough credits. You need {credits_mod.COST_PER_FORGE} credit(s) "
-                f"but have {remaining}.",
-            )
-    else:
-        remaining = None
-
-    try:
-        job_id = jobs.create_job(
-            url,
-            req.max_clips,
-            req.top_text,
-            user_id=user_id,
-        )
-    except Exception:
-        # Refund if job creation failed after charge
-        if user_id and remaining is not None:
-            credits_mod.refund(
-                user_id, credits_mod.COST_PER_FORGE,
-                related_id=job_id if "job_id" in dir() else "",
-                reason="Job creation failed — refund"
-            )
-        raise
-
+    if not is_new:
+        log.info("deduplicated forge submission (key %s -> job %s)", idempotency_key[:12], job_id)
     return {"job_id": job_id, "credits_remaining": remaining}
 
 
@@ -558,6 +649,7 @@ async def upload_job(
     file: UploadFile = File(...),
     max_clips: int = Form(config.MAX_CLIPS_DEFAULT),
     top_text: str = Form(""),
+    idempotency_key: str = Form(""),
 ):
     if not file.filename:
         raise HTTPException(
@@ -592,34 +684,24 @@ async def upload_job(
 
     user_id = _get_session_user(request)
 
-    # Charge credits BEFORE creating the job (atomic check-and-deduct)
-    if user_id:
-        ok, remaining = credits_mod.check_and_charge(
-            user_id, credits_mod.COST_PER_FORGE
+    # One logical upload (by idempotency key) = one job = one charge.
+    idempotency_key = idempotency_key or uuid.uuid4().hex
+    job_id, is_new, remaining = jobs.create_upload_job_idempotent(
+        filename=file.filename,
+        max_clips=max_clips,
+        top_text=top_text,
+        user_id=user_id,
+        idempotency_key=idempotency_key,
+    )
+    if job_id is None:
+        raise HTTPException(
+            402,
+            f"Not enough credits. You need {credits_mod.COST_PER_FORGE} credit(s) "
+            f"but have {remaining}.",
         )
-        if not ok:
-            raise HTTPException(
-                402,
-                f"Not enough credits. You need {credits_mod.COST_PER_FORGE} credit(s) "
-                f"but have {remaining}.",
-            )
-    else:
-        remaining = None
-
-    try:
-        job_id = jobs.create_upload_job(
-            filename=file.filename,
-            max_clips=max_clips,
-            top_text=top_text,
-            user_id=user_id,
-        )
-    except Exception:
-        if user_id and remaining is not None:
-            credits_mod.refund(
-                user_id, credits_mod.COST_PER_FORGE,
-                reason="Upload job creation failed — refund"
-            )
-        raise
+    if not is_new:
+        # Duplicate submit of the same upload: return the original job untouched.
+        return {"job_id": job_id, "credits_remaining": remaining}
 
     job_dir = config.DATA_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
@@ -656,7 +738,17 @@ async def upload_job(
     except HTTPException:
         raise
     except Exception:
+        # Post-charge failure: refund idempotently, cancel the job, remove the
+        # key mapping and any partial file.  Never leave a charged, stuck job.
         video_path.unlink(missing_ok=True)
+        jobs.cancel_job(job_id)
+        db.delete_idempotency_job_by_key(idempotency_key)
+        if user_id and remaining is not None:
+            credits_mod.refund(
+                user_id, credits_mod.COST_PER_FORGE,
+                related_id=job_id,
+                reason="Upload failed after charge — refund",
+            )
         raise HTTPException(
             500,
             "Failed to save uploaded video.",
@@ -709,10 +801,11 @@ def job_status(job_id: str, request: Request):
 
 
 @app.post("/api/jobs/clear")
-def clear_old_jobs():
-    """Clear completed/errored jobs older than 24 hours."""
+def clear_old_jobs(request: Request, _admin_id: str = Depends(require_admin)):
+    """Clear completed/errored jobs older than 24 hours (admin only)."""
     jobs._cleanup_old_jobs(max_age_hours=24, keep_minimum=0)
     remaining = len(jobs.get_all_jobs())
+    log.info("admin cleared old jobs; %d remaining", remaining)
     return {"message": f"Old jobs cleared. {remaining} job(s) remaining.", "remaining": remaining}
 
 
@@ -765,20 +858,6 @@ def cancel_job(job_id: str, request: Request):
 
 
 # ── Admin endpoints ─────────────────────────────────────────────
-
-ADMIN_EMAIL = os.getenv("CLPZ_ADMIN_EMAIL", "")
-
-
-def require_admin(request: Request) -> str:
-    """Dependency: require admin authorization. Returns user_id."""
-    user_id = _get_session_user(request)
-    if not user_id:
-        raise HTTPException(401, "Please log in.")
-    user = auth_mod.get_user_by_id(user_id)
-    if not user or user.get("email") != ADMIN_EMAIL:
-        raise HTTPException(403, "Admin access required.")
-    return user_id
-
 
 @app.get("/api/admin/users")
 def admin_list_users(request: Request, admin_id: str = Depends(require_admin)):
@@ -1060,14 +1139,30 @@ def save_clip(job_id: str, index: int, request: Request):
 
 
 
+class TextOverlay(BaseModel):
+    """A single text overlay, validated before it reaches the FFmpeg filter graph."""
+    text: str = Field(default="", max_length=200)
+    x: float = Field(default=540, ge=-10000, le=10000, allow_inf_nan=False)
+    y: float = Field(default=960, ge=-10000, le=10000, allow_inf_nan=False)
+    size: float = Field(default=48, ge=4, le=400, allow_inf_nan=False)
+    color: str = Field(default="white", max_length=32, pattern=r"^[A-Za-z0-9#@]*$")
+
+
 class EditRequest(BaseModel):
-    trim_start: float | None = Field(default=None, ge=0)
-    trim_end: float | None = Field(default=None, ge=0)
-    text_overlays: list[dict] = Field(default_factory=list)
-    top_text: str | None = None
-    volume: float = Field(default=1.0, ge=0, le=2.0)
+    trim_start: float | None = Field(default=None, ge=0, le=86400, allow_inf_nan=False)
+    trim_end: float | None = Field(default=None, ge=0, le=86400, allow_inf_nan=False)
+    text_overlays: list[TextOverlay] = Field(default_factory=list, max_length=10)
+    top_text: str | None = Field(default=None, max_length=200)
+    volume: float = Field(default=1.0, ge=0, le=2.0, allow_inf_nan=False)
     muted: bool = False
-    speed: float = Field(default=1.0, ge=0.25, le=4.0)
+    speed: float = Field(default=1.0, ge=0.25, le=4.0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _trim_range_is_valid(self):
+        ts, te = self.trim_start, self.trim_end
+        if ts is not None and te is not None and ts > te:
+            raise ValueError("trim_start must be less than or equal to trim_end")
+        return self
 
 
 @app.post("/api/jobs/{job_id}/clips/{index}/edit")
@@ -1103,15 +1198,23 @@ def edit_clip(job_id: str, index: int, req: EditRequest, request: Request):
         if req.speed > 2.0:
             af_parts.append(f"atempo={min(req.speed/2.0, 2.0)}")
 
-    # Text overlays
+    # Text overlays (already validated by the typed model; escape for the
+    # drawtext filter and disable %-expansion so client text cannot break out
+    # of the filter graph).
     for overlay in req.text_overlays:
-        text = overlay.get("text", "").replace("'", "\\'").replace(":", "\\:")
-        x = overlay.get("x", 540)
-        y = overlay.get("y", 960)
-        size = overlay.get("size", 48)
-        color = overlay.get("color", "white")
+        text = (
+            overlay.text
+            .replace("\\", "\\\\")
+            .replace("'", "\\'")
+            .replace(":", "\\:")
+            .replace(",", "\\,")
+        )
+        x = int(round(overlay.x))
+        y = int(round(overlay.y))
+        size = int(round(overlay.size))
+        color = overlay.color or "white"
         vf_parts.append(
-            f"drawtext=text='{text}':fontsize={size}:fontcolor={color}"
+            f"drawtext=text='{text}':fontsize={size}:fontcolor={color}:expansion=none"
             f":x=(w-text_w)/2+{x-int(config.OUT_WIDTH/2)}:y=(h-text_h)/2+{y-int(config.OUT_HEIGHT/2)}"
         )
 

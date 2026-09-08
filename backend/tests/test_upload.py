@@ -161,7 +161,12 @@ class TestUploadEndToEnd:
             if job.get("error"):
                 print(f"  Error: {job.get('error')[:200]}")
 
-            assert job.get("stage") in ("done", "error"), f"Unexpected stage: {job.get('stage')}"
+            # A pipeline failure must FAIL this E2E test, not silently pass:
+            # the product promise is that a real upload produces real clips.
+            assert job.get("stage") == "done", (
+                f"Pipeline did not complete successfully. Stage: {job.get('stage')} "
+                f"error: {job.get('error', '')[:300]}"
+            )
 
             if job.get("stage") == "done":
                 # Verify clips

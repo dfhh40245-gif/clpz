@@ -76,38 +76,62 @@ def _data_dir(base: Path) -> Path:
     return p
 
 
-def main() -> None:
-    import webview
-
-    base = _base_dir()
-    port = _free_port(8765)
-
+def _spawn_server(base, port, env):
     server_exe = base / "clpz_server.exe"
-    data_dir = _data_dir(base)
-
-    env = os.environ.copy()
-    env["CLIPFORGE_DATA"] = str(data_dir)
-    env.setdefault("CLPZ_DEBUG", "0")
-
     if server_exe.exists():
         cmd = [str(server_exe), "serve", "--port", str(port)]
     else:
         # Dev fallback: run via python (unfrozen debugging of this launcher)
         cmd = [sys.executable, str(base / "backend" / "clpz_server.py"),
                "serve", "--port", str(port)]
-
     creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-    proc = subprocess.Popen(
+    return subprocess.Popen(
         cmd, cwd=str(base), env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         creationflags=creationflags,
     )
 
+
+def _run_watchdog(proc, window, base, port, env, closing):
+    """Detect unexpected backend death and restart it (single replacement,
+    no duplicate servers).  On window close, stop monitoring and shut down."""
+    import threading
+    import time as _time
+
+    while not closing.is_set():
+        if proc.poll() is not None:
+            # Unexpected crash — attempt exactly one restart, then reload the UI.
+            new_proc = _spawn_server(base, port, env)
+            if _wait_ready(port):
+                window.load_url(f"http://127.0.0.1:{port}/app?desktop=1")
+                return  # keep original handle; do not respawn again
+            try:
+                new_proc.kill()
+            except Exception:
+                pass
+            return
+        _time.sleep(2)
+
+
+def main() -> None:
+    import threading
+    import webview
+
+    base = _base_dir()
+    port = _free_port(8765)
+    data_dir = _data_dir(base)
+
+    env = os.environ.copy()
+    env["CLIPFORGE_DATA"] = str(data_dir)
+    env.setdefault("CLPZ_DEBUG", "0")
+
+    proc = _spawn_server(base, port, env)
+
     try:
         if not _wait_ready(port):
             raise RuntimeError(
                 "CLPZ backend failed to start. "
-                f"Check logs in {data_dir / 'clpz_server.log'}"
+                f"Check logs in {data_dir / 'logs' / 'clpz_server.log'}"
             )
 
         window = webview.create_window(
@@ -121,7 +145,10 @@ def main() -> None:
             text_select=True,
         )
 
+        closing = threading.Event()
+
         def on_closed():
+            closing.set()
             try:
                 proc.terminate()
                 proc.wait(timeout=5)
@@ -132,8 +159,16 @@ def main() -> None:
                     pass
 
         window.events.closed += on_closed
+        # Watchdog: restart the backend if it crashes while the app is open.
+        threading.Thread(
+            target=_run_watchdog,
+            args=(proc, window, base, port, env, closing),
+            daemon=True,
+            name="clpz-watchdog",
+        ).start()
         webview.start(debug=("--debug" in sys.argv))
     finally:
+        closing.set()
         if proc.poll() is None:
             proc.terminate()
             try:

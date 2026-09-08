@@ -75,6 +75,16 @@ class BackendServer:
         self.port = port
         self.process: subprocess.Popen | None = None
         self._backend_dir = Path(__file__).resolve().parent.parent / "backend"
+        self._stdout_f = None
+        self._stderr_f = None
+
+    def _data_dir(self) -> Path:
+        """Desktop data dir: per-user app data, isolated from backend defaults."""
+        if getattr(sys, "frozen", False):
+            base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+            return base / "CLPZ"
+        # Dev layout: project-root/desktop_data so tests never touch backend/data.
+        return Path(__file__).resolve().parent.parent / "desktop_data"
 
     def start(self) -> None:
         """Start the backend server."""
@@ -89,6 +99,12 @@ class BackendServer:
         # Build environment
         env = os.environ.copy()
         env["PYTHONPATH"] = str(self._backend_dir)
+        # Desktop mode is a local, single-user product: production security
+        # settings, isolated data dir (never the backend's default ./data).
+        env.setdefault("CLPZ_DEBUG", "0")
+        data_dir = self._data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        env["CLIPFORGE_DATA"] = str(data_dir)
 
         # Add bundled FFmpeg to PATH if available
         ffmpeg_dir = _find_ffmpeg_dir()
@@ -105,12 +121,20 @@ class BackendServer:
             "--log-level", "warning",
         ]
 
+        # Redirect server output to log files instead of PIPEs.  Never-drained
+        # pipes fill their 64KB buffer once the server logs enough (e.g. long
+        # tracebacks) and permanently deadlock the backend mid-session.
+        log_dir = data_dir / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        self._stdout_f = open(log_dir / "clpz_server.log", "ab")
+        self._stderr_f = open(log_dir / "clpz_server.err.log", "ab")
+
         self.process = subprocess.Popen(
             cmd,
             cwd=str(self._backend_dir),
             env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=self._stdout_f,
+            stderr=self._stderr_f,
             creationflags=(
                 subprocess.CREATE_NO_WINDOW
                 if sys.platform == "win32"
@@ -121,8 +145,12 @@ class BackendServer:
         # Wait for the server to be ready
         if not _wait_for_server(self.port, timeout=30):
             stderr = ""
-            if self.process.poll() is not None:
-                stderr = self.process.stderr.read().decode(errors="replace")
+            try:
+                self._stderr_f.flush()
+                stderr = (log_dir / "clpz_server.err.log").read_text(
+                    encoding="utf-8", errors="replace")[-2000:]
+            except OSError:
+                pass
             self.stop()
             raise RuntimeError(
                 f"Backend failed to start within 30 seconds.\n{stderr}"
@@ -147,6 +175,14 @@ class BackendServer:
                 self.process.wait(timeout=3)
 
         self.process = None
+        for f in (self._stdout_f, self._stderr_f):
+            if f:
+                try:
+                    f.close()
+                except OSError:
+                    pass
+        self._stdout_f = None
+        self._stderr_f = None
 
     def url(self) -> str:
         """Return the backend URL."""

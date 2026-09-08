@@ -64,14 +64,19 @@ def test_reset_endpoint_blocked_in_debug():
                 time.sleep(0.5)
         r = requests.post(f"http://127.0.0.1:{port}/api/jobs/reset", timeout=5)
         assert r.status_code == 404
-        # And secure cookie flag is set when DEBUG=0
+        # Production over plain-HTTP loopback: the cookie must NOT force
+        # Secure (strict clients would refuse to send it, breaking sessions).
+        # Secure is only applied over HTTPS (or when CLPZ_FORCE_SECURE_COOKIES=1).
         r2 = requests.post(
             f"http://127.0.0.1:{port}/api/auth/signup",
             json={"email": f"sec-{uuid.uuid4().hex[:6]}@t.com", "password": "testpass123"},
             timeout=10,
         )
         cookie_header = r2.headers.get("set-cookie", "")
-        assert "Secure" in cookie_header or "secure" in cookie_header
+        assert "Secure" not in cookie_header, "Secure cookie over plain HTTP breaks loopback clients"
+        # And the session actually works for a strict HTTP client over loopback
+        me = requests.get(f"http://127.0.0.1:{port}/api/auth/me", cookies=r2.cookies, timeout=10)
+        assert me.status_code == 200
     finally:
         proc.terminate()
         try:

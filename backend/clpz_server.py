@@ -58,9 +58,41 @@ def _data_dir(base: Path) -> Path:
     return p
 
 
+def _setup_logging(data: Path) -> None:
+    """Configure structured, rotating file logging (data/clpz_server.log)
+    plus console output.  Never logs credentials or session tokens."""
+    import logging
+    from logging.handlers import RotatingFileHandler
+
+    log_dir = data / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    fmt = logging.Formatter(
+        "%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
+    file_h = RotatingFileHandler(
+        log_dir / "clpz_server.log", maxBytes=5 * 1024 * 1024, backupCount=3,
+        encoding="utf-8",
+    )
+    file_h.setFormatter(fmt)
+    console_h = logging.StreamHandler()
+    console_h.setFormatter(fmt)
+
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.addHandler(file_h)
+    root.addHandler(console_h)
+    # Don't duplicate uvicorn's own access logs on the console
+    logging.getLogger("uvicorn.access").addHandler(console_h)
+    logging.getLogger("uvicorn.error").propagate = False
+    logging.getLogger("uvicorn.error").addHandler(file_h)
+    logging.getLogger("uvicorn.error").addHandler(console_h)
+    logging.getLogger("clpz.api").info("CLPZ server logging initialized (log dir: %s)", log_dir)
+
+
 def _prepare_env(port: int) -> None:
     base = _base_dir()
     data = _data_dir(base)
+    _setup_logging(data)
 
     os.environ.setdefault("CLIPFORGE_DATA", str(data))
     # Bundled binaries live in <install>/bin
@@ -84,10 +116,16 @@ def _prepare_env(port: int) -> None:
     sys.path.insert(0, str(base / "backend"))
 
     # Imported AFTER env setup so config picks up the packaged paths.
+    import logging
     import main  # noqa: E402  (starts migrations, restores jobs)
 
     import uvicorn  # noqa: E402
-    uvicorn.run(main.app, host="127.0.0.1", port=port, log_level="warning")
+    logging.getLogger("clpz.api").info("CLPZ server starting on 127.0.0.1:%s", port)
+    # proxy_headers=False: uvicorn must NOT rewrite request.client from
+    # X-Forwarded-For for loopback peers, or rate limiting could be spoofed.
+    # Trusted forwarding is handled explicitly by CLPZ_TRUSTED_PROXIES.
+    uvicorn.run(main.app, host="127.0.0.1", port=port, log_level="warning",
+                proxy_headers=False)
 
 
 def _freeze_bootstrap(model_dir: str) -> None:

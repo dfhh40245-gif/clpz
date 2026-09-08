@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -19,6 +20,7 @@ from pathlib import Path
 import config
 import credits as credits_mod
 import database as db
+import proc as proc_mod
 from pipeline import (
     analyzer,
     captions,
@@ -32,11 +34,41 @@ JOBS: dict[str, dict] = {}
 _lock = threading.Lock()
 # Cancellation events — keyed by job_id
 _cancel_events: dict[str, threading.Event] = {}
+# Serializes the dedupe->charge->create->map sequence so one logical
+# submission (by idempotency key) can never create more than one job.
+_job_create_lock = threading.Lock()
 
 # Heavy stages (download/transcribe/render) saturate the machine, so jobs
 # beyond this limit wait in "queued" until a slot frees up.
 MAX_CONCURRENT_JOBS = int(os.getenv("MAX_CONCURRENT_JOBS", "1"))
 _slots = threading.Semaphore(MAX_CONCURRENT_JOBS)
+
+
+class JobTimeoutError(RuntimeError):
+    """Raised when a job exceeds its absolute deadline."""
+
+
+def _check_cancelled(job_id: str):
+    """Raise if this job has been cancelled."""
+    ev = _cancel_events.get(job_id)
+    if ev and ev.is_set():
+        raise RuntimeError("Job cancelled by user.")
+
+
+def _check_deadline(job_id: str, deadline: float):
+    """Raise if this job has exceeded its absolute deadline."""
+    if time.monotonic() > deadline:
+        proc_mod.kill_job(job_id)
+        raise JobTimeoutError(
+            f"Job timed out after {config.JOB_TIMEOUT_SECONDS:.0f}s."
+        )
+
+
+def _check_stop(job_id: str, deadline: float | None = None):
+    """Combined cancellation + deadline guard used at every stage boundary."""
+    _check_cancelled(job_id)
+    if deadline is not None:
+        _check_deadline(job_id, deadline)
 
 
 def _check_cancelled(job_id: str):
@@ -47,7 +79,12 @@ def _check_cancelled(job_id: str):
 
 
 def cancel_job(job_id: str) -> bool:
-    """Cancel a running or queued job. Returns True if cancelled."""
+    """Cancel a running or queued job. Returns True if cancelled.
+
+    Idempotent: a job that is already done/errored/cancelled returns False.
+    Sets the cancellation flag AND terminates any live subprocess tree so the
+    underlying work actually stops rather than just changing a database flag.
+    """
     with _lock:
         job = JOBS.get(job_id)
         if not job:
@@ -58,19 +95,78 @@ def cancel_job(job_id: str) -> bool:
         if ev:
             ev.set()
         _update_no_lock(job_id, stage="cancelled", error="Cancelled by user.", cancelled_at=time.time())
+    proc_mod.kill_job(job_id)
     return True
+
+
+def create_job_idempotent(
+    url: str,
+    max_clips: int,
+    top_text: str,
+    user_id: str | None,
+    idempotency_key: str = "",
+) -> tuple[str | None, bool, int | None]:
+    """Atomically dedupe-by-key, charge, create, and map a job.
+
+    Returns ``(job_id, is_new, remaining)`` where ``is_new`` is True only when
+    a brand-new job was created and charged.  Reusing an idempotency key
+    returns the ORIGINAL job_id with no second charge, no matter how many
+    times it is submitted or whether the original is running, failed, or done.
+
+    ``job_id`` is None when the user has insufficient credits.
+    """
+    with _job_create_lock:
+        if idempotency_key:
+            existing = db.get_job_id_for_idempotency(idempotency_key)
+            if existing:
+                remaining = credits_mod.get_balance(user_id) if user_id else None
+                return existing, False, remaining
+
+        if user_id:
+            ok, remaining = credits_mod.check_and_charge(
+                user_id, credits_mod.COST_PER_FORGE, idempotency_key=idempotency_key
+            )
+            if not ok:
+                return None, False, remaining
+        else:
+            remaining = None
+
+        try:
+            job_id = create_job(url, max_clips, top_text, user_id=user_id)
+        except Exception:
+            # Charge already deducted but the job could not be created —
+            # refund so the user is never charged for a job that does not exist.
+            if user_id:
+                try:
+                    credits_mod.refund(
+                        user_id, credits_mod.COST_PER_FORGE,
+                        reason="Job creation failed — refund",
+                    )
+                except Exception:
+                    pass
+            raise
+        if idempotency_key:
+            db.save_idempotency_job(idempotency_key, job_id, user_id)
+        return job_id, True, remaining
 
 
 def _update_no_lock(job_id: str, **kwargs):
     """Update job state without acquiring the lock (caller must hold it)."""
-    JOBS[job_id].update(kwargs)
-    _persist(JOBS[job_id])
+    job = JOBS.get(job_id)
+    if job is None:
+        return
+    job.update(kwargs)
+    _persist(job)
 
 
 def _update(job_id: str, **kwargs):
     with _lock:
-        JOBS[job_id].update(kwargs)
-        _persist(JOBS[job_id])
+        job = JOBS.get(job_id)
+        if job is None:
+            # Job was cleared/reset while its worker thread was mid-flight.
+            return
+        job.update(kwargs)
+        _persist(job)
 
 
 def _persist(job: dict):
@@ -87,7 +183,7 @@ def _persist(job: dict):
         pass
 
 
-def _validate_output(path: Path) -> dict:
+def _validate_output(path: Path, job_id: str = "") -> dict:
     """Validate a rendered clip using ffprobe and a real decode pass.
 
     ``format.duration`` is deliberately treated as the authoritative duration:
@@ -104,14 +200,15 @@ def _validate_output(path: Path) -> dict:
         return result
     try:
         ffprobe = _find_bin("ffprobe")
-        proc = subprocess.run(
+        proc = proc_mod.run(
+            job_id,
             [
                 ffprobe, "-v", "error",
                 "-show_entries", "stream=codec_type,codec_name,duration,width,height,pix_fmt",
                 "-show_entries", "format=duration,size",
                 "-of", "json", str(path),
             ],
-            capture_output=True, text=True, timeout=30,
+            timeout=30,
         )
         if proc.returncode != 0:
             result["error"] = "ffprobe returned non-zero exit code."
@@ -152,13 +249,12 @@ def _validate_output(path: Path) -> dict:
 
         # ffprobe only inspects container metadata. Decode one video frame as a
         # final guard against a corrupt stream that happens to have a valid MOOV.
-        decode = subprocess.run(
+        decode = proc_mod.run(
+            job_id,
             [
                 _find_bin("ffmpeg"), "-v", "error", "-i", str(path),
                 "-map", "0:v:0", "-frames:v", "1", "-f", "null", os.devnull,
             ],
-            capture_output=True,
-            text=True,
             timeout=60,
         )
         if decode.returncode != 0:
@@ -179,17 +275,16 @@ def _validate_output(path: Path) -> dict:
     return result
 
 
-def _build_thumbnail(path: Path, duration: float, out_path: Path) -> Path:
+def _build_thumbnail(path: Path, duration: float, out_path: Path, job_id: str = "") -> Path:
     """Create a compact, real preview image from the rendered clip."""
     timestamp = max(0.0, min(duration * 0.45, max(0.0, duration - 0.1)))
-    proc = subprocess.run(
+    proc = proc_mod.run(
+        job_id,
         [
             _find_bin("ffmpeg"), "-y", "-v", "error",
             "-ss", f"{timestamp:.3f}", "-i", str(path),
             "-frames:v", "1", "-vf", "scale=360:-2", "-q:v", "3", str(out_path),
         ],
-        capture_output=True,
-        text=True,
         timeout=60,
     )
     if proc.returncode != 0 or not out_path.exists() or out_path.stat().st_size == 0:
@@ -216,10 +311,21 @@ def load_saved_jobs():
         with _lock:
             JOBS.setdefault(job["id"], job)
 
-    # Also load any jobs from SQLite that aren't already loaded
+    # Also load any jobs from SQLite that aren't already loaded.
+    # A job whose on-disk directory is gone (deleted or manually removed) is
+    # NOT resurrected: the filesystem is authoritative for rendered media, and
+    # resurrecting metadata without media produces a broken "ghost" project.
     try:
         all_db_jobs = db.get_all_jobs()
         for job in all_db_jobs:
+            if job["id"] in JOBS:
+                continue
+            job_dir = config.DATA_DIR / job["id"]
+            if not job_dir.exists():
+                # Stale DB row with no media on disk — drop it, don't ghost it.
+                db.delete_job(job["id"])
+                db.delete_idempotency_jobs_by_job(job["id"])
+                continue
             if job.get("stage") not in ("done", "error"):
                 job["stage"] = "error"
                 job["error"] = (
@@ -227,20 +333,19 @@ def load_saved_jobs():
                     "Submit it again."
                 )
             with _lock:
-                if job["id"] not in JOBS:
-                    JOBS[job["id"]] = job
-                    # Also write JSON file for backward compatibility
-                    try:
-                        d = config.DATA_DIR / job["id"]
-                        d.mkdir(parents=True, exist_ok=True)
-                        (d / "job.json").write_text(json.dumps(job), encoding="utf-8")
-                    except OSError:
-                        pass
+                JOBS[job["id"]] = job
+                try:
+                    (job_dir / "job.json").write_text(
+                        json.dumps(job), encoding="utf-8"
+                    )
+                except OSError:
+                    pass
     except Exception:
         pass
 
-    # Never silently delete a user's rendered projects on server startup.
-    # Retention can be explicitly enabled in configuration.
+    # Automatic retention cleanup is strictly opt-in.  A restart never
+    # silently removes completed projects unless CLIPFORGE_AUTO_CLEANUP_HOURS
+    # is explicitly set to a positive value.
     if config.AUTO_CLEANUP_HOURS > 0:
         _cleanup_old_jobs(max_age_hours=config.AUTO_CLEANUP_HOURS)
 
@@ -289,15 +394,21 @@ def _cleanup_old_jobs(max_age_hours: int = 24, keep_minimum: int = 3):
     for mtime, job_id, job_dir in to_remove:
         if mtime < cutoff:
             try:
-                shutil.rmtree(job_dir)
+                shutil.rmtree(job_dir, ignore_errors=True)
                 with _lock:
                     JOBS.pop(job_id, None)
+                # Keep the filesystem and database consistent: a deleted job
+                # must not come back from SQLite on the next restart.
+                db.delete_job(job_id)
+                db.delete_idempotency_jobs_by_job(job_id)
                 removed += 1
             except Exception:
                 pass
 
     if removed:
-        print(f"[cleanup] Removed {removed} old jobs (>{max_age_hours}h)")
+        logging.getLogger(__name__).info(
+            "[cleanup] Removed %d old jobs (>%sh)", removed, max_age_hours
+        )
 
 
 def create_job(url: str, max_clips: int, top_text: str = "", user_id: str | None = None) -> str:
@@ -332,6 +443,52 @@ def create_job(url: str, max_clips: int, top_text: str = "", user_id: str | None
     t.start()
 
     return job_id
+
+
+def create_upload_job_idempotent(
+    filename: str,
+    max_clips: int,
+    top_text: str,
+    user_id: str | None,
+    idempotency_key: str = "",
+) -> tuple[str | None, bool, int | None]:
+    """Upload equivalent of ``create_job_idempotent``: one key = one job.
+
+    The job row is created and the key→job mapping persisted BEFORE the file
+    body is streamed, so a concurrent duplicate submit of the same upload
+    returns the original job instead of charging/creating a second one.
+    """
+    with _job_create_lock:
+        if idempotency_key:
+            existing = db.get_job_id_for_idempotency(idempotency_key)
+            if existing:
+                remaining = credits_mod.get_balance(user_id) if user_id else None
+                return existing, False, remaining
+
+        if user_id:
+            ok, remaining = credits_mod.check_and_charge(
+                user_id, credits_mod.COST_PER_FORGE, idempotency_key=idempotency_key
+            )
+            if not ok:
+                return None, False, remaining
+        else:
+            remaining = None
+
+        try:
+            job_id = create_upload_job(filename, max_clips, top_text, user_id=user_id)
+        except Exception:
+            if user_id:
+                try:
+                    credits_mod.refund(
+                        user_id, credits_mod.COST_PER_FORGE,
+                        reason="Upload job creation failed — refund",
+                    )
+                except Exception:
+                    pass
+            raise
+        if idempotency_key:
+            db.save_idempotency_job(idempotency_key, job_id, user_id)
+        return job_id, True, remaining
 
 
 def create_upload_job(filename: str, max_clips: int, top_text: str = "", user_id: str | None = None) -> str:
@@ -389,6 +546,8 @@ def _classify_error(error_msg: str) -> str:
     msg = error_msg.lower()
     if "cancelled" in msg:
         return "CANCELLED"
+    if "timed out" in msg:
+        return "JOB_TIMEOUT"
     if "transcription failed" in msg:
         if "oom" in msg or "memory" in msg or "allocat" in msg:
             return "TRANSCRIPTION_OOM"
@@ -485,11 +644,14 @@ def get_all_jobs() -> list[dict]:
 def _update_clip(job_id: str, index: int, **kwargs):
     """Mutate one clip's fields under the lock, then persist."""
     with _lock:
-        for c in JOBS[job_id]["clips"]:
+        job = JOBS.get(job_id)
+        if job is None:
+            return
+        for c in job["clips"]:
             if c["index"] == index:
                 c.update(kwargs)
 
-        _persist(JOBS[job_id])
+        _persist(job)
 
 
 def _run(job_id: str):
@@ -499,11 +661,18 @@ def _run(job_id: str):
 
 def _run_pipeline(job_id: str):
     job = get_job(job_id)
+    if job is None:
+        # Job was cleared/reset while its worker was queued or starting.
+        return
     job_dir = config.DATA_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
     # Mark the authoritative start time
     _update(job_id, started_at=time.time())
+
+    # Absolute deadline for the whole job (safety net for in-process Whisper
+    # which cannot be interrupted mid-run).
+    deadline = time.monotonic() + config.JOB_TIMEOUT_SECONDS
 
     # Check disk space — need at least 2GB free for a typical job
     try:
@@ -546,12 +715,12 @@ def _run_pipeline(job_id: str):
             video = existing
             _update(job_id, video=video, progress=1.0)
         else:
-            _check_cancelled(job_id)
+            _check_stop(job_id, deadline)
             _update(job_id, stage="downloading", progress=0.0)
 
             with _timed("download"):
                 video = downloader.download(
-                    job["url"], job_dir,
+                    job["url"], job_dir, job_id=job_id,
                 )
 
             _update(job_id, video=video, progress=1.0)
@@ -564,7 +733,7 @@ def _run_pipeline(job_id: str):
         if "transcribe" in completed_stages and srt_path.exists():
             pass  # Already transcribed
         else:
-            _check_cancelled(job_id)
+            _check_stop(job_id, deadline)
             _update(job_id, stage="transcribing", progress=0.0)
 
             try:
@@ -602,7 +771,7 @@ def _run_pipeline(job_id: str):
         _mark_complete("parse")
 
         # 4. Analyze
-        _check_cancelled(job_id)
+        _check_stop(job_id, deadline)
         _update(job_id, stage="analyzing", progress=0.0)
 
         with _timed("analyze"):
@@ -627,14 +796,14 @@ def _run_pipeline(job_id: str):
         _mark_complete("analyze")
 
         # 5. Render
-        _check_cancelled(job_id)
+        _check_stop(job_id, deadline)
         _update(job_id, stage="tracking", progress=0.0)
 
         done_count = {"n": 0}
         count_lock = threading.Lock()
 
         def _render_one(i, clip):
-            _check_cancelled(job_id)
+            _check_stop(job_id, deadline)
             _update_clip(job_id, i, status="tracking")
 
             out_path = job_dir / f"clip_{i}.mp4"
@@ -642,8 +811,10 @@ def _run_pipeline(job_id: str):
             thumbnail_path = job_dir / f"clip_{i}.jpg"
 
             try:
-                plan = cutter.plan_layout(video["path"], clip["start"], clip["end"])
-                _check_cancelled(job_id)
+                plan = cutter.plan_layout(
+                    video["path"], clip["start"], clip["end"], job_id=job_id,
+                )
+                _check_stop(job_id, deadline)
                 _update(job_id, stage="rendering")
                 _update_clip(job_id, i, status="rendering")
 
@@ -656,15 +827,16 @@ def _run_pipeline(job_id: str):
 
                 cutter.render_clip(
                     video["path"], clip["start"], clip["end"],
-                    ass_path, out_path, plan=plan,
+                    ass_path, out_path, plan=plan, job_id=job_id,
                 )
+                _check_stop(job_id, deadline)
 
                 # Post-render validation
-                validation = _validate_output(out_path)
+                validation = _validate_output(out_path, job_id=job_id)
                 if not validation["valid"]:
                     raise RuntimeError(f"Output validation failed: {validation['error']}")
 
-                _build_thumbnail(out_path, validation["duration"], thumbnail_path)
+                _build_thumbnail(out_path, validation["duration"], thumbnail_path, job_id=job_id)
 
                 caption_words = [
                     word for word in transcript["words"]
@@ -685,6 +857,11 @@ def _run_pipeline(job_id: str):
                 ok = True
 
             except Exception as clip_err:
+                # A cancellation/timeout must abort the whole job, not just
+                # mark this clip failed (which would end in "error").
+                ev = _cancel_events.get(job_id)
+                if (ev and ev.is_set()) or isinstance(clip_err, JobTimeoutError):
+                    raise
                 out_path.unlink(missing_ok=True)
                 _update_clip(job_id, i, status="failed", error=str(clip_err)[:300])
                 ok = False
@@ -712,13 +889,19 @@ def _run_pipeline(job_id: str):
             )
 
         _mark_complete("render")
+        # Cancellation wins over completion: never commit a "done" job the
+        # user already cancelled.
+        _check_stop(job_id, deadline)
         _update(job_id, stage="finalizing", progress=1.0)
+        _check_stop(job_id, deadline)
         _update(job_id, stage="done", progress=1.0, completed_at=time.time())
 
     except Exception as e:
         traceback.print_exc()
+        proc_mod.kill_job(job_id)
         is_cancelled = "cancelled" in str(e).lower()
-        error_code = "CANCELLED" if is_cancelled else _classify_error(str(e))
+        is_timeout = isinstance(e, JobTimeoutError)
+        error_code = "CANCELLED" if is_cancelled else ("JOB_TIMEOUT" if is_timeout else _classify_error(str(e)))
         stage = "cancelled" if is_cancelled else "error"
         terminal_ts = {
             "cancelled_at": time.time() if is_cancelled else None,
@@ -738,6 +921,52 @@ def _run_pipeline(job_id: str):
                 )
             except Exception:
                 pass  # Best-effort; log but don't crash
+
+
+_maintenance_started = False
+
+
+def _run_maintenance():
+    """Periodic housekeeping: prune stale sessions, idempotency records,
+    finished cancel-events and dead subprocess handles.  Runs in the
+    background; safe to call from a daemon thread."""
+    # Sleep BEFORE the first pass so we never fire writes during startup
+    # (or during test fixture setup right after import).
+    interval = max(60, config.MAINTENANCE_INTERVAL_SECONDS)
+    time.sleep(interval)
+    while True:
+        try:
+            db.cleanup_expired_sessions()
+            db.cleanup_old_idempotency()
+        except Exception:
+            logging.getLogger(__name__).warning("maintenance db cleanup failed", exc_info=True)
+        try:
+            with _lock:
+                stale = [jid for jid, ev in _cancel_events.items()
+                         if ev.is_set() and jid not in JOBS]
+                for jid in stale:
+                    _cancel_events.pop(jid, None)
+                for jid in list(_cancel_events.keys()):
+                    proc_mod.prune(jid)
+        except Exception:
+            logging.getLogger(__name__).warning("maintenance in-memory cleanup failed", exc_info=True)
+        time.sleep(interval)
+
+
+def start_maintenance():
+    """Start the background maintenance thread once (idempotent).
+
+    Disabled when CLPZ_DISABLE_MAINTENANCE=1 (used by the test suite so
+    background writes never contend with test fixture DB access).
+    """
+    global _maintenance_started
+    if _maintenance_started:
+        return
+    if os.environ.get("CLPZ_DISABLE_MAINTENANCE") == "1":
+        return
+    _maintenance_started = True
+    t = threading.Thread(target=_run_maintenance, daemon=True, name="clpz-maintenance")
+    t.start()
 
 
 def clip_path(job_id: str, index: int) -> Path | None:

@@ -19,6 +19,8 @@ import subprocess
 import time
 from pathlib import Path
 
+import proc as proc_mod
+
 import config
 
 
@@ -76,6 +78,7 @@ def _run_ytdlp(
     player_client: str | None = None,
     extra_args: list[str] | None = None,
     timeout: int = 300,
+    job_id: str = "",
 ) -> tuple[dict, str]:
     """Run yt-dlp and return (metadata_dict, stderr_tail)."""
     cmd = _build_base_cmd(Path(config.COOKIES_FILE))
@@ -101,13 +104,7 @@ def _run_ytdlp(
     env = _build_env()
 
     try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            env=env,
-        )
+        proc = proc_mod.run(job_id, cmd, timeout=timeout, env=env)
     except FileNotFoundError as e:
         raise DownloadError(f"Could not find yt-dlp or ffmpeg: {e}")
     except subprocess.TimeoutExpired:
@@ -169,7 +166,7 @@ def _classify_error(err: str, url: str) -> str:
     )
 
 
-def _verify_download(path: Path) -> None:
+def _verify_download(path: Path, job_id: str = "") -> None:
     """Verify the downloaded file is a valid video."""
     if not path.exists():
         raise DownloadError("Download finished but no file was produced.")
@@ -178,14 +175,15 @@ def _verify_download(path: Path) -> None:
 
     try:
         ffprobe = _find_binary("ffprobe")
-        result = subprocess.run(
+        result = proc_mod.run(
+            job_id,
             [
                 ffprobe, "-v", "error",
                 "-show_entries", "stream=codec_type,duration",
                 "-show_entries", "format=duration",
                 "-of", "json", str(path),
             ],
-            capture_output=True, text=True, timeout=30,
+            timeout=30,
         )
         if result.returncode != 0:
             raise DownloadError("Downloaded file is not a valid video.")
@@ -206,18 +204,19 @@ def _verify_download(path: Path) -> None:
             raise DownloadError("Downloaded file is too small to be valid.")
 
 
-def _get_duration_from_file(path: Path) -> float:
+def _get_duration_from_file(path: Path, job_id: str = "") -> float:
     """Get video duration using ffprobe."""
     try:
         ffprobe = _find_binary("ffprobe")
-        result = subprocess.run(
+        result = proc_mod.run(
+            job_id,
             [
                 ffprobe, "-v", "error",
                 "-show_entries", "format=duration",
                 "-of", "default=noprint_wrappers=1:nokey=1",
                 str(path),
             ],
-            capture_output=True, text=True, timeout=30,
+            timeout=30,
         )
         if result.returncode == 0:
             return float(result.stdout.strip())
@@ -234,6 +233,7 @@ def _try_download(
     player_client: str | None = None,
     extra_args: list[str] | None = None,
     timeout: int = 300,
+    job_id: str = "",
 ) -> dict:
     """Attempt a single download. Returns result dict or raises DownloadError."""
     meta, stderr = _run_ytdlp(
@@ -242,6 +242,7 @@ def _try_download(
         player_client=player_client,
         extra_args=extra_args,
         timeout=timeout,
+        job_id=job_id,
     )
 
     files = sorted(dest_dir.glob("source.*"))
@@ -249,12 +250,12 @@ def _try_download(
         raise DownloadError("No file was produced.")
 
     path = files[0]
-    _verify_download(path)
+    _verify_download(path, job_id=job_id)
 
     title = meta.get("title", "Untitled video")
     duration = float(meta.get("duration") or 0.0)
     if duration <= 0:
-        duration = _get_duration_from_file(path)
+        duration = _get_duration_from_file(path, job_id=job_id)
 
     return {
         "path": str(path),
@@ -276,6 +277,7 @@ def download(
     dest_dir: Path,
     progress_cb=None,
     browser_cookies: str | None = None,
+    job_id: str = "",
 ) -> dict:
     """Download best <=1080p mp4. Returns {"path": ..., "title": ..., "duration": ...}.
 
@@ -324,6 +326,7 @@ def download(
                 format_str=strategy["format"],
                 player_client=strategy["client"],
                 timeout=300,
+                job_id=job_id,
             )
             return result
 
@@ -342,6 +345,7 @@ def download(
                             player_client=strategy["client"],
                             extra_args=["--cookies-from-browser", browser],
                             timeout=300,
+                            job_id=job_id,
                         )
                         return result
                     except DownloadError:

@@ -17,6 +17,7 @@ import subprocess
 import struct
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 import numpy as np
@@ -79,13 +80,25 @@ def _get_model():
         if compute == "auto":
             compute = "float16" if device == "cuda" else "int8"
 
-        _model = WhisperModel(
-            model_ref,
-            device=device,
-            compute_type=compute,
-        )
-
-        return _model
+        # ctranslate2's MKL allocator can fail transiently under memory
+        # pressure (mkl_malloc: failed to allocate memory).  Retry a few
+        # times with a short backoff; a one-off hiccup must not fail the job.
+        last_err = None
+        for attempt in range(3):
+            try:
+                _model = WhisperModel(
+                    model_ref,
+                    device=device,
+                    compute_type=compute,
+                )
+                return _model
+            except Exception as e:
+                last_err = e
+                if "mkl_malloc" in str(e) and attempt < 2:
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                raise
+        raise last_err
 
 
 def _find_bin(name: str) -> str:
@@ -358,6 +371,13 @@ def transcribe(video_path: str, progress_cb=None, job_dir: str | Path | None = N
                 progress_cb((i + 1) / total_chunks)
 
         result = _merge_chunks(chunk_results, duration)
+
+    if not result["segments"]:
+        # Fail loudly here rather than writing an empty SRT whose parse error
+        # misattributes the failure downstream ("SRT file is empty").
+        raise RuntimeError(
+            "No speech detected in this audio — Whisper produced no segments."
+        )
 
     # Save transcript files to job directory
     if job_dir is not None:

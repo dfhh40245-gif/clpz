@@ -40,6 +40,45 @@ def _get_conn() -> sqlite3.Connection:
     return _conn
 
 
+def _safe_commit(conn: sqlite3.Connection) -> None:
+    """Commit, rolling back on failure so a write transaction is never left
+    dangling (a dangling transaction would block every later writer)."""
+    try:
+        conn.commit()
+    except sqlite3.Error:
+        try:
+            conn.rollback()
+        except sqlite3.Error:
+            pass
+        raise
+
+
+from contextlib import contextmanager as _contextmanager
+
+
+@_contextmanager
+def _write():
+    """Exclusive DB access with guaranteed commit-or-rollback on exit.
+
+    Every mutation goes through this: if any statement inside the block
+    raises (e.g. a foreign-key violation or a busy timeout), the open
+    transaction is rolled back instead of left dangling.  A dangling write
+    transaction on the shared connection would block every later writer —
+    including other processes — with 'database is locked' forever.
+    """
+    with _lock:
+        conn = _get_conn()
+        try:
+            yield conn
+            conn.commit()
+        except BaseException:
+            try:
+                conn.rollback()
+            except sqlite3.Error:
+                pass
+            raise
+
+
 def close() -> None:
     """Close the database connection (for clean shutdown)."""
     global _conn
@@ -128,13 +167,42 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
 );
 CREATE INDEX IF NOT EXISTS idx_idemp_user ON idempotency_keys(user_id);
 CREATE INDEX IF NOT EXISTS idx_idemp_created ON idempotency_keys(created_at);
+
+CREATE TABLE IF NOT EXISTS idempotency_jobs (
+    key TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL,
+    user_id TEXT,
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_idemjob_created ON idempotency_jobs(created_at);
+CREATE INDEX IF NOT EXISTS idx_idemjob_job ON idempotency_jobs(job_id);
 """
+
+# Lightweight ordered migrations.  ``PRAGMA user_version`` is the applied
+# schema version; each entry is applied in order and idempotently.
+_MIGRATIONS: list[str] = []
 
 
 def _init_schema(conn: sqlite3.Connection) -> None:
-    """Create tables if they don't exist."""
+    """Create tables if they don't exist, then apply ordered migrations."""
     conn.executescript(_SCHEMA)
-    conn.commit()
+    _apply_migrations(conn)
+    _safe_commit(conn)
+
+
+def _apply_migrations(conn: sqlite3.Connection) -> None:
+    """Apply ``_MIGRATIONS`` entries above the current ``user_version``."""
+    current = conn.execute("PRAGMA user_version").fetchone()[0]
+    for idx in range(current, len(_MIGRATIONS)):
+        conn.executescript(_MIGRATIONS[idx])
+        conn.execute(f"PRAGMA user_version = {idx + 1}")
+        _safe_commit(conn)
+
+
+def schema_version() -> int:
+    """Return the current applied schema version."""
+    with _write() as conn:
+        return conn.execute("PRAGMA user_version").fetchone()[0]
 
 
 # ── Users ──────────────────────────────────────────────────────────
@@ -144,21 +212,19 @@ def create_user(user_id: str, email: str, password_hash: str, salt: str,
                 display_name: str = "", created_at: float = 0) -> dict:
     """Insert a new user. Raises sqlite3.IntegrityError on duplicate email."""
     created_at = created_at or time.time()
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         conn.execute(
             "INSERT INTO users (id, email, display_name, password_hash, password_salt, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             (user_id, email.lower(), display_name, password_hash, salt, created_at),
         )
-        conn.commit()
+        _safe_commit(conn)
     return {"id": user_id, "email": email.lower(), "display_name": display_name}
 
 
 def get_user_by_email(email: str) -> dict | None:
     """Return user dict (without password fields) or None."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         row = conn.execute("SELECT * FROM users WHERE email = ?", (email.lower(),)).fetchone()
     if not row:
         return None
@@ -173,8 +239,7 @@ def get_user_by_email(email: str) -> dict | None:
 
 def get_user_by_id(user_id: str) -> dict | None:
     """Return user dict (without password fields) or None."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     if not row:
         return None
@@ -189,8 +254,7 @@ def get_user_by_id(user_id: str) -> dict | None:
 
 def get_user_password(email: str) -> dict | None:
     """Return {id, password_hash, password_salt} for authentication, or None."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         row = conn.execute(
             "SELECT id, password_hash, password_salt FROM users WHERE email = ?",
             (email.lower(),),
@@ -202,35 +266,31 @@ def get_user_password(email: str) -> dict | None:
 
 def set_password(user_id: str, password_hash: str, salt: str) -> None:
     """Update a user's password hash and salt."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         conn.execute(
             "UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?",
             (password_hash, salt, user_id),
         )
-        conn.commit()
+        _safe_commit(conn)
 
 
 def mark_email_verified(user_id: str) -> None:
     """Mark a user's email as verified."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         conn.execute("UPDATE users SET email_verified = 1 WHERE id = ?", (user_id,))
-        conn.commit()
+        _safe_commit(conn)
 
 
 def is_email_verified(user_id: str) -> bool:
     """Check if a user's email is verified."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         row = conn.execute("SELECT email_verified FROM users WHERE id = ?", (user_id,)).fetchone()
     return bool(row["email_verified"]) if row else False
 
 
 def user_exists(email: str) -> bool:
     """Check if an email is already registered."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         row = conn.execute("SELECT 1 FROM users WHERE email = ?", (email.lower(),)).fetchone()
     return row is not None
 
@@ -244,13 +304,12 @@ def create_session(user_id: str) -> str:
     """Create a session token. Returns the token string."""
     import secrets as _secrets
     token = _secrets.token_urlsafe(32)
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         conn.execute(
             "INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)",
             (token, user_id, time.time()),
         )
-        conn.commit()
+        _safe_commit(conn)
     return token
 
 
@@ -258,8 +317,7 @@ def validate_session(token: str) -> str | None:
     """Validate a session token. Returns user_id or None."""
     if not token:
         return None
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         row = conn.execute(
             "SELECT user_id, created_at FROM sessions WHERE token = ?", (token,)
         ).fetchone()
@@ -273,27 +331,24 @@ def validate_session(token: str) -> str | None:
 
 def destroy_session(token: str) -> None:
     """Destroy a single session."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
-        conn.commit()
+        _safe_commit(conn)
 
 
 def destroy_all_user_sessions(user_id: str) -> None:
     """Destroy all sessions for a user (force re-login)."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
-        conn.commit()
+        _safe_commit(conn)
 
 
 def cleanup_expired_sessions() -> int:
     """Remove expired sessions. Returns count deleted."""
     cutoff = time.time() - _MAX_SESSION_AGE
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         cursor = conn.execute("DELETE FROM sessions WHERE created_at < ?", (cutoff,))
-        conn.commit()
+        _safe_commit(conn)
     return cursor.rowcount
 
 
@@ -302,22 +357,20 @@ def cleanup_expired_sessions() -> int:
 
 def get_credit_balance(user_id: str) -> int:
     """Return current credit balance (always >= 0)."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         row = conn.execute("SELECT balance FROM credits WHERE user_id = ?", (user_id,)).fetchone()
     return max(0, row["balance"]) if row else 0
 
 
 def set_credit_balance(user_id: str, balance: int) -> None:
     """Set credit balance directly (for migrations)."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         conn.execute(
             "INSERT INTO credits (user_id, balance) VALUES (?, ?) "
             "ON CONFLICT(user_id) DO UPDATE SET balance = excluded.balance",
             (user_id, balance),
         )
-        conn.commit()
+        _safe_commit(conn)
 
 
 def check_and_charge(user_id: str, amount: int, related_id: str = "") -> tuple[bool, int]:
@@ -329,8 +382,7 @@ def check_and_charge(user_id: str, amount: int, related_id: str = "") -> tuple[b
     if amount <= 0:
         return True, get_credit_balance(user_id)
 
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         row = conn.execute("SELECT balance FROM credits WHERE user_id = ?", (user_id,)).fetchone()
         current = max(0, row["balance"]) if row else 0
 
@@ -346,7 +398,7 @@ def check_and_charge(user_id: str, amount: int, related_id: str = "") -> tuple[b
         _log_txn(conn, user_id, -amount, "forge",
                  f"Forge clip generation ({amount} credit{'s' if amount != 1 else ''})",
                  related_id=related_id)
-        conn.commit()
+        _safe_commit(conn)
     return True, new_balance
 
 
@@ -355,8 +407,7 @@ def refund_credits(user_id: str, amount: int, related_id: str = "", reason: str 
     if amount <= 0:
         return get_credit_balance(user_id)
 
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         row = conn.execute("SELECT balance FROM credits WHERE user_id = ?", (user_id,)).fetchone()
         current = max(0, row["balance"]) if row else 0
         new_balance = current + amount
@@ -368,7 +419,7 @@ def refund_credits(user_id: str, amount: int, related_id: str = "", reason: str 
         _log_txn(conn, user_id, amount, "refund",
                  reason or "Refund for failed processing",
                  related_id=related_id)
-        conn.commit()
+        _safe_commit(conn)
     return new_balance
 
 
@@ -378,8 +429,7 @@ def add_credits(user_id: str, amount: int, txn_type: str = "purchase",
     if amount <= 0:
         return get_credit_balance(user_id)
 
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         row = conn.execute("SELECT balance FROM credits WHERE user_id = ?", (user_id,)).fetchone()
         current = max(0, row["balance"]) if row else 0
         new_balance = current + amount
@@ -390,7 +440,7 @@ def add_credits(user_id: str, amount: int, txn_type: str = "purchase",
         )
         _log_txn(conn, user_id, amount, txn_type,
                  description or f"Credits added ({amount})")
-        conn.commit()
+        _safe_commit(conn)
     return new_balance
 
 
@@ -412,16 +462,14 @@ def _log_txn(conn: sqlite3.Connection, user_id: str, amount: int,
 def log_transaction(user_id: str, amount: int, txn_type: str,
                     description: str = "", related_id: str = "") -> None:
     """Public wrapper to log a credit transaction."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         _log_txn(conn, user_id, amount, txn_type, description, related_id)
-        conn.commit()
+        _safe_commit(conn)
 
 
 def get_transactions(user_id: str, limit: int = 50) -> list[dict]:
     """Return recent transactions for a user (newest first)."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         rows = conn.execute(
             "SELECT * FROM credit_transactions WHERE user_id = ? "
             "ORDER BY created_at DESC LIMIT ?",
@@ -432,8 +480,7 @@ def get_transactions(user_id: str, limit: int = 50) -> list[dict]:
 
 def has_signup_bonus(user_id: str) -> bool:
     """Check if a user has ever received a signup bonus."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         row = conn.execute(
             "SELECT 1 FROM credit_transactions WHERE user_id = ? AND type = 'signup_bonus' LIMIT 1",
             (user_id,),
@@ -448,8 +495,7 @@ def has_refund_for_job(related_id: str) -> bool:
     """Check if a refund was already issued for a specific job/order."""
     if not related_id:
         return False
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         row = conn.execute(
             "SELECT 1 FROM credit_transactions WHERE related_id = ? AND type = 'refund' LIMIT 1",
             (related_id,),
@@ -458,8 +504,7 @@ def has_refund_for_job(related_id: str) -> bool:
 
 def save_job(job: dict) -> None:
     """Insert or update a job in the database."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         conn.execute(
             "INSERT INTO jobs (id, user_id, input_type, url, stage, progress, "
             "created_at, started_at, completed_at, failed_at, cancelled_at, "
@@ -495,13 +540,12 @@ def save_job(job: dict) -> None:
                 json.dumps(job.get("timings", {})),
             ),
         )
-        conn.commit()
+        _safe_commit(conn)
 
 
 def get_job(job_id: str) -> dict | None:
     """Return a job dict or None."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
     if not row:
         return None
@@ -510,16 +554,14 @@ def get_job(job_id: str) -> dict | None:
 
 def get_all_jobs() -> list[dict]:
     """Return all jobs (newest first)."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         rows = conn.execute("SELECT * FROM jobs ORDER BY created_at DESC").fetchall()
     return [_row_to_job(r) for r in rows]
 
 
 def update_job(job_id: str, **kwargs) -> None:
     """Update specific fields of a job."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         sets = []
         vals = []
         for key, val in kwargs.items():
@@ -529,21 +571,19 @@ def update_job(job_id: str, **kwargs) -> None:
             vals.append(val)
         vals.append(job_id)
         conn.execute(f"UPDATE jobs SET {', '.join(sets)} WHERE id = ?", vals)
-        conn.commit()
+        _safe_commit(conn)
 
 
 def delete_job(job_id: str) -> None:
     """Delete a job record."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
-        conn.commit()
+        _safe_commit(conn)
 
 
 def count_user_jobs(user_id: str, stage: str | None = None) -> int:
     """Count jobs for a user, optionally filtered by stage."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         if stage:
             row = conn.execute(
                 "SELECT COUNT(*) FROM jobs WHERE user_id = ? AND stage = ?",
@@ -586,8 +626,7 @@ def _row_to_job(row: sqlite3.Row) -> dict:
 
 def save_verification_code(user_id: str, code: str, purpose: str, expires_at: float) -> None:
     """Save a verification code for a user."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         conn.execute(
             "INSERT INTO verification_codes (user_id, code, purpose, expires_at) "
             "VALUES (?, ?, ?, ?) "
@@ -595,13 +634,12 @@ def save_verification_code(user_id: str, code: str, purpose: str, expires_at: fl
             "purpose=excluded.purpose, expires_at=excluded.expires_at",
             (user_id, code, purpose, expires_at),
         )
-        conn.commit()
+        _safe_commit(conn)
 
 
 def get_verification_code(user_id: str) -> dict | None:
     """Get the active verification code for a user, or None if expired/missing."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         row = conn.execute(
             "SELECT code, purpose, expires_at FROM verification_codes WHERE user_id = ?",
             (user_id,),
@@ -616,10 +654,9 @@ def get_verification_code(user_id: str) -> dict | None:
 
 def delete_verification_code(user_id: str) -> None:
     """Delete a verification code for a user."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         conn.execute("DELETE FROM verification_codes WHERE user_id = ?", (user_id,))
-        conn.commit()
+        _safe_commit(conn)
 
 
 def verify_code(user_id: str, code: str, purpose: str) -> bool:
@@ -648,8 +685,7 @@ def check_idempotency(key: str) -> dict | None:
     """
     if not key:
         return None
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         row = conn.execute(
             "SELECT result, created_at FROM idempotency_keys WHERE key = ?",
             (key,),
@@ -665,32 +701,73 @@ def check_idempotency(key: str) -> dict | None:
 
 def save_idempotency(key: str, user_id: str, operation: str, result: dict) -> None:
     """Save an idempotency key with its result."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO idempotency_keys (key, user_id, operation, result, created_at) "
             "VALUES (?, ?, ?, ?, ?)",
             (key, user_id, operation, json.dumps(result), time.time()),
         )
-        conn.commit()
+        _safe_commit(conn)
 
 
 def delete_idempotency(key: str) -> None:
     """Delete an idempotency key."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         conn.execute("DELETE FROM idempotency_keys WHERE key = ?", (key,))
-        conn.commit()
+        _safe_commit(conn)
 
 
 def cleanup_old_idempotency() -> int:
-    """Remove expired idempotency keys. Returns count deleted."""
+    """Remove expired idempotency keys and job mappings. Returns count deleted."""
     cutoff = time.time() - 86400
-    with _lock:
-        conn = _get_conn()
-        cursor = conn.execute("DELETE FROM idempotency_keys WHERE created_at < ?", (cutoff,))
-        conn.commit()
-    return cursor.rowcount
+    with _write() as conn:
+        c1 = conn.execute("DELETE FROM idempotency_keys WHERE created_at < ?", (cutoff,))
+        c2 = conn.execute("DELETE FROM idempotency_jobs WHERE created_at < ?", (cutoff,))
+        _safe_commit(conn)
+    return c1.rowcount + c2.rowcount
+
+
+# ── Idempotency → job mapping (one logical submit = one job) ─────────
+
+
+def get_job_id_for_idempotency(key: str) -> str | None:
+    """Return the job_id previously created for an idempotency key, if any."""
+    if not key:
+        return None
+    with _write() as conn:
+        row = conn.execute(
+            "SELECT job_id FROM idempotency_jobs WHERE key = ?", (key,),
+        ).fetchone()
+    return row["job_id"] if row else None
+
+
+def save_idempotency_job(key: str, job_id: str, user_id: str | None) -> None:
+    """Atomically record that an idempotency key maps to a created job."""
+    with _write() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO idempotency_jobs (key, job_id, user_id, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (key, job_id, user_id, time.time()),
+        )
+        _safe_commit(conn)
+
+
+def delete_idempotency_job_by_key(key: str) -> None:
+    """Remove an idempotency→job mapping (used when a job is hard-deleted)."""
+    if not key:
+        return
+    with _write() as conn:
+        conn.execute("DELETE FROM idempotency_jobs WHERE key = ?", (key,))
+        _safe_commit(conn)
+
+
+def delete_idempotency_jobs_by_job(job_id: str) -> None:
+    """Remove every idempotency→job mapping pointing at a deleted job."""
+    if not job_id:
+        return
+    with _write() as conn:
+        conn.execute("DELETE FROM idempotency_jobs WHERE job_id = ?", (job_id,))
+        _safe_commit(conn)
 
 
 # ── Admin helpers ─────────────────────────────────────────────────
@@ -698,8 +775,7 @@ def cleanup_old_idempotency() -> int:
 
 def get_all_users(limit: int = 100, offset: int = 0) -> list[dict]:
     """Return all users (for admin)."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         rows = conn.execute(
             "SELECT id, email, display_name, email_verified, created_at, plan "
             "FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?",
@@ -710,17 +786,15 @@ def get_all_users(limit: int = 100, offset: int = 0) -> list[dict]:
 
 def count_users() -> int:
     """Count total users."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
 
 
 def set_user_plan(user_id: str, plan: str) -> None:
     """Update a user's plan (admin)."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         conn.execute("UPDATE users SET plan = ? WHERE id = ?", (plan, user_id))
-        conn.commit()
+        _safe_commit(conn)
 
 
 
@@ -761,7 +835,7 @@ def migrate_from_json() -> None:
                     migrated += 1
                 except sqlite3.IntegrityError:
                     pass
-            conn.commit()
+            _safe_commit(conn)
             if migrated:
                 print(f"  Migrated {migrated} user(s) from users.json")
         except (json.JSONDecodeError, OSError) as e:
@@ -780,7 +854,7 @@ def migrate_from_json() -> None:
                     (user_id, balance),
                 )
                 migrated += 1
-            conn.commit()
+            _safe_commit(conn)
             if migrated:
                 print(f"  Migrated {migrated} credit balance(s) from credits.json")
         except (json.JSONDecodeError, OSError) as e:
@@ -812,7 +886,7 @@ def migrate_from_json() -> None:
                     migrated += 1
                 except (sqlite3.IntegrityError, KeyError):
                     pass
-            conn.commit()
+            _safe_commit(conn)
             if migrated:
                 print(f"  Migrated {migrated} transaction(s) from credit_transactions.json")
         except (json.JSONDecodeError, OSError) as e:
@@ -837,7 +911,7 @@ def migrate_from_json() -> None:
                         migrated += 1
                     except sqlite3.IntegrityError:
                         pass
-            conn.commit()
+            _safe_commit(conn)
             if migrated:
                 print(f"  Migrated {migrated} session(s) from sessions.json")
         except (json.JSONDecodeError, OSError) as e:
@@ -886,7 +960,7 @@ def migrate_from_json() -> None:
                     json.dumps(job.get("timings", {})),
                 ),
             )
-            conn.commit()
+            _safe_commit(conn)
             migrated_jobs += 1
         except (json.JSONDecodeError, OSError, sqlite3.IntegrityError) as e:
             print(f"  Warning: Could not migrate job {job_dir.name}: {e}")
@@ -900,16 +974,14 @@ def backup_database() -> Path | None:
     if not _DB_PATH.exists():
         return None
     backup = _DB_PATH.with_suffix(".db.bak")
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         conn.execute(f"VACUUM INTO '{str(backup)}'")
     return backup
 
 
 def get_stats() -> dict:
     """Return database statistics."""
-    with _lock:
-        conn = _get_conn()
+    with _write() as conn:
         users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         sessions = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
         credit_rows = conn.execute("SELECT COUNT(*) FROM credits").fetchone()[0]

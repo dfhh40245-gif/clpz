@@ -18,6 +18,7 @@ import subprocess
 from pathlib import Path
 
 import config
+import proc as proc_mod
 
 
 def _find_bin(name: str) -> str:
@@ -40,16 +41,17 @@ class RenderError(RuntimeError):
     pass
 
 
-def _probe_dimensions(video_path: str) -> tuple[int, int]:
+def _probe_dimensions(video_path: str, job_id: str = "") -> tuple[int, int]:
     """Display dimensions. ffmpeg auto-rotates frames per rotation metadata
     before our filters run, so swap w/h when the source is rotated 90/270."""
-    proc = subprocess.run(
+    proc = proc_mod.run(
+        job_id,
         [
             _find_bin("ffprobe"), "-v", "error", "-select_streams", "v:0",
             "-show_entries", "stream=width,height:stream_side_data=rotation",
             "-of", "json", video_path,
         ],
-        capture_output=True, text=True, timeout=60,
+        timeout=60,
     )
     stream = json.loads(proc.stdout)["streams"][0]
     w, h = int(stream["width"]), int(stream["height"])
@@ -62,17 +64,18 @@ def _probe_dimensions(video_path: str) -> tuple[int, int]:
     return w, h
 
 
-def _grab_frame(video_path: str, t: float):
+def _grab_frame(video_path: str, t: float, job_id: str = ""):
     """Decode one frame at time t using ffmpeg."""
     import cv2
     import numpy as np
 
-    proc = subprocess.run(
+    proc = proc_mod.run(
+        job_id,
         [
             _find_bin("ffmpeg"), "-v", "error", "-ss", f"{t:.2f}", "-i", video_path,
             "-frames:v", "1", "-f", "image2pipe", "-vcodec", "mjpeg", "-q:v", "3", "-",
         ],
-        capture_output=True, timeout=60,
+        timeout=60,
     )
     if proc.returncode != 0 or not proc.stdout:
         return None
@@ -80,7 +83,7 @@ def _grab_frame(video_path: str, t: float):
     return cv2.imdecode(buf, cv2.IMREAD_COLOR)
 
 
-def _face_keyframes(video_path: str, start: float, end: float) -> tuple[list[tuple[float, float]], list[tuple[float, float, float, float]]]:
+def _face_keyframes(video_path: str, start: float, end: float, job_id: str = "") -> tuple[list[tuple[float, float]], list[tuple[float, float, float, float]]]:
     """Speaker-aware face tracking with hard cuts.
 
     Returns (keyframes, face_boxes) where:
@@ -89,12 +92,12 @@ def _face_keyframes(video_path: str, start: float, end: float) -> tuple[list[tup
     Falls back to single-centered for single-person or no-face videos.
     """
     try:
-        return _speaker_aware_tracking(video_path, start, end)
+        return _speaker_aware_tracking(video_path, start, end, job_id=job_id)
     except Exception:
         return [(0.0, 0.5)], []
 
 
-def _speaker_aware_tracking(video_path: str, start: float, end: float) -> list[tuple[float, float]]:
+def _speaker_aware_tracking(video_path: str, start: float, end: float, job_id: str = "") -> list[tuple[float, float]]:
     """Build speaker-aware face tracking keyframes.
 
     1. Sample frames at ~0.5s intervals
@@ -119,7 +122,7 @@ def _speaker_aware_tracking(video_path: str, start: float, end: float) -> list[t
     for i in range(n_samples):
         t = start + duration * (i + 0.5) / n_samples
         local_t = t - start
-        frame = _grab_frame(video_path, t)
+        frame = _grab_frame(video_path, t, job_id=job_id)
         if frame is None:
             frames_data.append((local_t, []))
             continue
@@ -439,10 +442,10 @@ def _x_expression(keyframes: list[tuple[float, float]], src_w: int, crop_w: int)
     return f"if(lt(t{E}{pts[0][0]:.2f}){E}{pts[0][1]}{E}{expr})"
 
 
-def plan_layout(source: str, start: float, end: float) -> dict:
+def plan_layout(source: str, start: float, end: float, job_id: str = "") -> dict:
     """Decide per-clip layout. Returns a plan dict consumed by render_clip:
     {"mode": "face"|"split", "margin_v": int, ...mode-specific fields}."""
-    src_w, src_h = _probe_dimensions(source)
+    src_w, src_h = _probe_dimensions(source, job_id=job_id)
     target_ratio = config.OUT_WIDTH / config.OUT_HEIGHT
 
     if src_w / src_h <= target_ratio:
@@ -450,7 +453,7 @@ def plan_layout(source: str, start: float, end: float) -> dict:
         return {"mode": "face", "margin_v": config.CAPTION_MARGIN_V,
                 "src_w": src_w, "src_h": src_h, "keyframes": [(0.0, 0.5)]}
 
-    keyframes, boxes = _face_keyframes(source, start, end)
+    keyframes, boxes = _face_keyframes(source, start, end, job_id=job_id)
     median_face_h = sorted(b[3] for b in boxes)[len(boxes) // 2] if boxes else 1.0
     is_facecam = boxes and median_face_h < config.FACECAM_MAX_FACE_FRAC
 
@@ -498,6 +501,7 @@ def render_clip(
     ass_path: Path,
     out_path: Path,
     plan: dict | None = None,
+    job_id: str = "",
 ) -> Path:
     plan = plan or plan_layout(source, start, end)
     src_w, src_h = plan["src_w"], plan["src_h"]
@@ -595,8 +599,9 @@ def render_clip(
             str(out_path),
         ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        proc = proc_mod.run(job_id, cmd, timeout=600)
     except subprocess.TimeoutExpired:
+        proc_mod.kill_job(job_id)
         raise RenderError("ffmpeg timed out rendering this clip (10 min limit).")
     if proc.returncode != 0:
         raise RenderError(f"ffmpeg failed:\n{proc.stderr[-800:]}")

@@ -69,10 +69,12 @@ live in `packaging/RELEASE_SHA256.txt` and `docs/RELEASE.md`.
 - **Private mode:** the dev `.bat`/local workflow works with no account.
   Web signup/login exists for the future hosted flow; browser-to-desktop
   session handoff is not implemented yet (documented limitation).
-- **Supabase:** optional. When `NEXT_PUBLIC_SUPABASE_URL` +
-  `SUPABASE_SERVICE_ROLE_KEY` are set the backend switches to Supabase auth and
-  centralized credits; otherwise it uses local SQLite. Service-role keys are
-  server-only — never in frontend code or Git.
 - **Auth/credits security:** every credit mutation is server-authoritative;
   account-owned jobs are only visible to their owner (or admin); admin
-  endpoints require the admin account.
+  endpoints require the admin account. One idempotency key maps to exactly
+  one job, so a retried submission can never double-charge or create a
+  duplicate job.
+- **No cloud backend:** authentication, credits and jobs are stored locally
+  in SQLite under the data directory. There is no Supabase or other hosted
+  service dependency; processing (transcription, rendering) runs entirely on
+  the user's machine.

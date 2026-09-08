@@ -48,12 +48,17 @@ class TestServer:
         env = os.environ.copy()
         env["CLIPFORGE_DATA"] = str(self._data_dir)
         env["CLPZ_DEBUG"] = "1"
+        env["CLPZ_DISABLE_MAINTENANCE"] = "1"
         env["CLPZ_ADMIN_EMAIL"] = "admin@test.com"
         env["CLPZ_ALLOWED_ORIGINS"] = f"http://127.0.0.1:{self.port}"
         self._proc = subprocess.Popen(
             [sys.executable, "-m", "uvicorn", "main:app",
              "--host", "127.0.0.1", "--port", str(self.port), "--log-level", "error"],
-            cwd=str(BACKEND_DIR), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            cwd=str(BACKEND_DIR), env=env,
+            # Redirect to files: never-drained PIPEs fill up after verbose
+            # server output (tracebacks) and deadlock the server mid-session.
+            stdout=open(TEST_DATA_DIR / "server_stdout.log", "ab"),
+            stderr=open(TEST_DATA_DIR / "server_stderr.log", "ab"),
         )
         for _ in range(30):
             try:
@@ -62,8 +67,12 @@ class TestServer:
                 time.sleep(0.5)
         if self._proc:
             self._proc.kill()
-            out, err = self._proc.communicate(timeout=5)
-            raise RuntimeError(f"Server failed: {err.decode()[:300]}")
+            self._proc.wait(timeout=5)
+        tail = ""
+        log = TEST_DATA_DIR / "server_stderr.log"
+        if log.exists():
+            tail = log.read_text(encoding="utf-8", errors="replace")[-500:]
+        raise RuntimeError(f"Server failed to start.\n{tail}")
         raise RuntimeError("Server failed to start")
 
     def stop(self):
