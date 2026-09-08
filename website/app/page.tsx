@@ -1,7 +1,6 @@
 import { AnimatedGradient } from "@/components/animated-gradient";
 import { Brand } from "@/components/brand";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { SmokeyBackground } from "@/components/smokey-background";
 
 const features = [
   ["Context before keywords", "A sentence can sound punchy and still make no sense alone. CLPZ scores the setup, hook, payoff, and standalone clarity together."],
@@ -24,7 +23,6 @@ export default function Home() {
 
     <section className="hero shell" id="top">
       <AnimatedGradient className="hero-gradient" />
-      <SmokeyBackground className="hero-smoke" />
       <div className="hero-copy">
         <p className="kicker"><span /> Desktop video studio</p>
         <h1>Find the clip<br />inside the video.</h1>
@@ -80,7 +78,7 @@ export default function Home() {
       <div className="proof-grid"><div className="vertical-proof"><div className="safe-zone"><small>9:16 SAFE AREA</small><p>captions that stay<br /><em>inside</em> the frame</p></div></div><div className="proof-copy"><p className="section-index">CAPTIONS + REFRAMING</p><h3>Built for vertical<br />from the first cut.</h3><p>Word-timed captions, centered subjects, and platform-safe layouts are ready before export. You can still move every element.</p><ul><li>Editable word timing</li><li>Automatic 9:16 crop</li><li>Preview before rendering</li></ul></div></div>
     </div></section>
 
-    <section className="get shell" id="get-clpz"><div className="get-card"><div><p className="section-index">04 / GET CLPZ</p><h2>Your footage stays local.<br />Your purchase stays simple.</h2><p>Purchase securely through Gumroad, keep the receipt in your inbox, and download the Windows app from a versioned release.</p></div><div className="purchase"><span className="purchase-label">DESKTOP LICENSE</span><strong>Available on Gumroad</strong><PearlLink href="/buy" small>Buy CLPZ</PearlLink><a className="text-link" href="/download">Already have it? Download the app →</a></div></div></section>
+    <section className="get shell" id="get-clpz"><header className="pricing-heading"><p className="section-index">04 / GET CLPZ</p><h2>Start small. Scale when<br />the clips start moving.</h2><p>Credits are used for AI analysis. Editing and local exports stay available in the desktop app.</p></header><div className="pricing-grid"><article className="price-card featured"><span className="price-badge">BEST VALUE</span><p>CREATOR</p><h3><strong>$7</strong> / month</h3><ul><li>120 AI credits each month</li><li>Desktop app and editor</li><li>Unused credits roll for 60 days</li></ul><a className="checkout-button" href="/buy?plan=creator">Subscribe on Gumroad →</a></article><article className="price-card"><p>50-CREDIT PACK</p><h3><strong>$4</strong> once</h3><ul><li>No subscription required</li><li>Credits never expire</li><li>Use with any CLPZ account</li></ul><a className="checkout-button secondary" href="/buy?plan=credits-50">Buy 50 credits →</a></article><article className="price-card"><p>200-CREDIT PACK</p><h3><strong>$11</strong> once</h3><ul><li>Best for larger projects</li><li>Credits never expire</li><li>Use with any CLPZ account</li></ul><a className="checkout-button secondary" href="/buy?plan=credits-200">Buy 200 credits →</a></article></div><p className="pricing-footnote">Payments and receipts are securely handled by Gumroad. <a href="/download">Already purchased? Download the app →</a></p></section>
 
     <footer className="footer shell"><Brand href="#top" /><p>Turn long video into the short worth watching.</p><div><a href="/privacy">Privacy</a><a href="/terms">Terms</a><span>© 2026 CLPZ</span></div></footer>
   </main>;

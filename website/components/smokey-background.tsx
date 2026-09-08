@@ -32,8 +32,8 @@ export function SmokeyBackground({ className = "" }: { className?: string }) {
     const trackPointer=(event:PointerEvent)=>{const rect=canvas.getBoundingClientRect();mouseRef.current={x:event.clientX-rect.left,y:event.clientY-rect.top,active:true};};
     const clearPointer=()=>{mouseRef.current.active=false;};
     window.addEventListener("pointermove",trackPointer,{passive:true});window.addEventListener("pointerleave",clearPointer);
-    const start=performance.now();let frame=0;
-    const render=(now:number)=>{const ratio=Math.min(devicePixelRatio||1,2),width=Math.round(canvas.clientWidth*ratio),height=Math.round(canvas.clientHeight*ratio);if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}gl.viewport(0,0,width,height);gl.uniform2f(resolution,width,height);gl.uniform1f(time,(now-start)/1000);const m=mouseRef.current;gl.uniform2f(mouse,m.active?m.x*ratio:width/2,m.active?height-m.y*ratio:height/2);gl.drawArrays(gl.TRIANGLES,0,6);frame=requestAnimationFrame(render);};
+    const start=performance.now();let frame=0,last=0;
+    const render=(now:number)=>{frame=requestAnimationFrame(render);if(now-last<33)return;last=now;const ratio=Math.min(devicePixelRatio||1,1),width=Math.round(canvas.clientWidth*ratio),height=Math.round(canvas.clientHeight*ratio);if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}gl.viewport(0,0,width,height);gl.uniform2f(resolution,width,height);gl.uniform1f(time,(now-start)/1000);const m=mouseRef.current;gl.uniform2f(mouse,m.active?m.x*ratio:width/2,m.active?height-m.y*ratio:height/2);gl.drawArrays(gl.TRIANGLES,0,6);};
     frame=requestAnimationFrame(render);return()=>{cancelAnimationFrame(frame);window.removeEventListener("pointermove",trackPointer);window.removeEventListener("pointerleave",clearPointer);gl.deleteProgram(program);gl.deleteShader(vertex);gl.deleteShader(fragment);};
   }, []);
 
