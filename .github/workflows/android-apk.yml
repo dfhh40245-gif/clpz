@@ -77,12 +77,11 @@ jobs:
           api-level: 29
           arch: x86_64
           profile: pixel_2
+          disk-size: 2048M
+          emulator-boot-timeout: 300
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: cd mobile-android && gradle :app:connectedDebugAndroidTest
-      - name: Collect screenshots
-        if: always()
-        run: adb pull /sdcard/Android/data/com.clpz.mobile/files/screenshots ui-screenshots || true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: bash mobile-android/check-interface.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
