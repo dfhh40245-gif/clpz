@@ -12,6 +12,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.io.FileInputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -34,6 +35,13 @@ class StudioFlowTest {
         instrumentation.uiAutomation.takeScreenshot().let { bitmap ->
             File(dir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
             bitmap.recycle()
+        }
+        // Gradle removes the test app after the suite; retain captures outside its data directory.
+        instrumentation.uiAutomation.executeShellCommand("mkdir -p /sdcard/Download/clpz-ui").use {
+            FileInputStream(it.fileDescriptor).readBytes()
+        }
+        instrumentation.uiAutomation.executeShellCommand("cp ${File(dir, "$name.png").absolutePath} /sdcard/Download/clpz-ui/$name.png").use {
+            FileInputStream(it.fileDescriptor).readBytes()
         }
     }
 
