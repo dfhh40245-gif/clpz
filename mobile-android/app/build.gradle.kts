@@ -18,8 +18,9 @@ android {
         applicationId = "com.clpz.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SUPABASE_URL", quoted(System.getenv("SUPABASE_URL")))
         buildConfigField("String", "SUPABASE_ANON_KEY", quoted(System.getenv("SUPABASE_ANON_KEY")))
         buildConfigField("String", "WEBSITE_URL", quoted(System.getenv("WEBSITE_URL") ?: "https://clpzit.vercel.app"))
@@ -42,4 +43,9 @@ dependencies {
     implementation(platform("io.github.jan-tennert.supabase:bom:3.1.4"))
     implementation("io.github.jan-tennert.supabase:auth-kt")
     implementation("io.ktor:ktor-client-android:3.1.3")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2025.05.01"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
