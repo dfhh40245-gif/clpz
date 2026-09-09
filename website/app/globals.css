@@ -63,3 +63,6 @@ body{transition:background-color .35s ease,color .35s ease}
 .auth-divider{height:34px;display:flex;align-items:center;color:var(--muted);font-size:9px}.auth-divider:before,.auth-divider:after{content:"";height:1px;background:var(--line);flex:1}.auth-divider span{padding:0 12px}.auth-card .google-button{margin-top:0;border-radius:9px}.auth-switch{font-size:11px!important;margin-top:17px!important}.auth-switch button{border:0;background:none;padding:0;color:var(--gold);font:700 11px "DM Sans";text-decoration:underline;cursor:pointer}
 .auth-message{margin:0 0 15px!important;padding:10px;border:1px solid rgba(66,170,87,.35);border-radius:8px;background:rgba(66,170,87,.12);color:#2a7c3c!important;font-size:11px}.dark .auth-message{color:#8bdd9c!important}
 @media(max-width:680px){.auth-card{margin-top:2vh;padding:28px 22px}.auth-card h1{font-size:32px}.auth-tabs{margin-block:18px 16px}.auth-form{gap:12px}}
+
+.app-downloads{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:28px}.app-downloads a{min-height:44px;padding:0 18px;border:1px solid var(--line);border-radius:9px;display:inline-flex;align-items:center;font-size:12px;font-weight:700}.app-downloads a:hover{border-color:var(--gold);color:var(--gold)}
+.availability a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}.availability a:hover{color:var(--gold)}
