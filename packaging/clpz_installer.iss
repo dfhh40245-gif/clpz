@@ -1,6 +1,6 @@
 ; CLPZ Windows installer — Inno Setup 6
 ; Build: "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\clpz_installer.iss
-; Produces: packaging\out\ClipForge-1.0.0-Windows-x64.exe
+; Produces: packaging\out\CLPZ-Setup-Windows-x64.exe
 
 #define AppName "CLPZ"
 #define AppVersion "1.0.0"
@@ -16,7 +16,7 @@ DefaultDirName={autopf}\CLPZ
 DefaultGroupName=CLPZ
 DisableProgramGroupPage=yes
 OutputDir=out
-OutputBaseFilename=ClipForge-{#AppVersion}-Windows-x64
+OutputBaseFilename=CLPZ-Setup-Windows-x64
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
