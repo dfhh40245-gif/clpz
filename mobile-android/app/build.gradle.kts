@@ -10,6 +10,10 @@ fun quoted(value: String?) = "\"${(value ?: "").replace("\\", "\\\\").replace("\
 android {
     namespace = "com.clpz.mobile"
     compileSdk = 35
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
     defaultConfig {
         applicationId = "com.clpz.mobile"
         minSdk = 26
