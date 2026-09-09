@@ -42,7 +42,7 @@ class MainActivity:ComponentActivity(){
     override fun onNewIntent(intent:Intent){super.onNewIntent(intent);setIntent(intent);if(auth.configured)runCatching{auth.handleDeepLink(intent)};recreate()}
 }
 
-@Composable fun ClpzTheme(content:@Composable()->Unit){MaterialTheme(colorScheme=darkColorScheme(primary=Amber,background=Black,surface=Panel,onBackground=Ink,onSurface=Ink)){Surface(Modifier.fillMaxSize(),color=Black){content()}}}
+@Composable fun ClpzTheme(content: @Composable () -> Unit){MaterialTheme(colorScheme=darkColorScheme(primary=Amber,background=Black,surface=Panel,onBackground=Ink,onSurface=Ink)){Surface(Modifier.fillMaxSize(),color=Black){content()}}}
 
 @Composable fun ClpzApp(auth:AuthRepository){var authenticated by remember{mutableStateOf(auth.signedIn())};if(!authenticated){AuthScreen(auth){authenticated=true};return};val context=LocalContext.current;val scope=rememberCoroutineScope();val store=remember{ProjectStore(context)};var projects by remember{mutableStateOf(store.load())};var editing by remember{mutableStateOf<ClipProject?>(null)};if(editing!=null){EditorScreen(editing!!,{p->store.save(p);projects=store.load();editing=null},{editing=null});return}
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->if(uri!=null){runCatching{context.contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION)};val retriever=MediaMetadataRetriever();runCatching{retriever.setDataSource(context,uri);val duration=retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()?:60_000L;val suggestions=store.suggestions(uri,duration);suggestions.forEach(store::save);projects=store.load();editing=suggestions.first()};retriever.release()}}
