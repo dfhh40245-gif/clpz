@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { Brand } from "@/components/brand";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { SiteNav } from "@/components/site-nav";
 
 const plans = {
   creator: { name: "Creator subscription", price: "$7 / month" },
@@ -11,5 +10,5 @@ const plans = {
 export default async function BuyPage({ searchParams }: { searchParams: Promise<{ plan?: string }> }) {
   const requested = (await searchParams).plan || "creator";
   const plan = plans[requested as keyof typeof plans] || plans.creator;
-  return <main className="checkout-page"><nav className="nav shell"><Brand /><ThemeToggle /></nav><section className="checkout-status"><p className="section-index">SECURE CHECKOUT</p><h1>{plan.name}</h1><strong>{plan.price}</strong><p>This checkout option is being connected to Gumroad. No payment has been taken.</p><Link className="checkout-button" href="/#get-clpz">Return to plans</Link></section></main>;
+  return <><SiteNav /><main id="main-content" className="checkout-page"><section className="checkout-status"><p className="section-index">COMING SOON</p><h1>{plan.name}</h1><strong>{plan.price}</strong><p>We’re finishing payment setup for this plan. Checkout is not open, and you have not been charged.</p><p>You can start creating now: download the free app, make a draft, and edit or export it on your device.</p><Link className="checkout-button" href="/apps">Get the free app ↗</Link><Link className="checkout-secondary" href="/#get-clpz">Back to plans & credits</Link></section></main></>;
 }

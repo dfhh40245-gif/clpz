@@ -19,9 +19,10 @@ export function AuthForm() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   function switchMode(next: Mode) {
-    setMode(next); setMessage(""); setSuccess(false); setPassword(""); setConfirm("");
+    setMode(next); setMessage(""); setSuccess(false); setPassword(""); setConfirm(""); setShowPassword(false);
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -47,20 +48,20 @@ export function AuthForm() {
 
   return <section className="auth-card">
     <Brand />
-    <h1>Welcome {mode === "login" ? "Back" : "to CLPZ"}</h1>
-    <p>{mode === "login" ? "Sign in to continue" : "Create your account to get started"}</p>
-    <div className="auth-tabs" role="tablist" aria-label="Account action"><button type="button" className={mode === "login" ? "active" : ""} onClick={() => switchMode("login")}>Sign in</button><button type="button" className={mode === "signup" ? "active" : ""} onClick={() => switchMode("signup")}>Sign up</button></div>
+    <h1>{mode === "login" ? "Back to creating." : "Your studio starts here."}</h1>
+    <p>{mode === "login" ? "One account for your CLPZ apps." : "Create an account. Make your next great clip."}</p>
+    <div className="auth-tabs" role="group" aria-label="Account action"><button type="button" aria-pressed={mode === "login"} disabled={busy} className={mode === "login" ? "active" : ""} onClick={() => switchMode("login")}>Sign in</button><button type="button" aria-pressed={mode === "signup"} disabled={busy} className={mode === "signup" ? "active" : ""} onClick={() => switchMode("signup")}>Create account</button></div>
     {message && <p className={success ? "auth-message" : "auth-error"} role="status">{message}</p>}
-    <form className="auth-form" onSubmit={submit}>
+    <form className="auth-form" onSubmit={submit} aria-busy={busy}>
       {mode === "signup" && <label><span>Display name <i>optional</i></span><input type="text" value={displayName} onChange={e => setDisplayName(e.target.value)} autoComplete="name" /></label>}
-      <label><span>Email address</span><input type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" required /></label>
-      <label><span>Password</span><input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={6} required /></label>
+      <label><span>Email address</span><input type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" autoCapitalize="none" spellCheck={false} placeholder="you@example.com" required /></label>
+      <label htmlFor="password"><span>Password{mode === "signup" && <i>at least 6 characters</i>}</span></label><div className="password-field"><input id="password" type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={mode === "signup" ? 6 : undefined} required /><button className="password-reveal" type="button" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}>{showPassword ? "Hide" : "Show"}</button></div>
       {mode === "signup" && <label><span>Confirm password</span><input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} autoComplete="new-password" minLength={6} required /></label>}
       <button className="auth-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "login" ? "Sign In →" : "Create Account →"}</button>
     </form>
     <div className="auth-divider"><span>OR</span></div>
     <GoogleButton />
-    <p className="auth-switch">{mode === "login" ? "Don’t have an account?" : "Already have an account?"} <button type="button" onClick={() => switchMode(mode === "login" ? "signup" : "login")}>{mode === "login" ? "Sign Up" : "Log In"}</button></p>
+    <p className="auth-switch">Just here to edit? <Link href="/apps">Get the free app ↗</Link></p>
     <small>By continuing, you agree to the <Link href="/terms">Terms</Link> and <Link href="/privacy">Privacy Policy</Link>.</small>
   </section>;
 }

@@ -60,3 +60,5 @@ website/.env*
 mobile-android/.gradle/
 mobile-android/local.properties
 mobile-android/**/build/
+docs/ui-checks/
+.android-run-logs*

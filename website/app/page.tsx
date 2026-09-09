@@ -1,6 +1,7 @@
 import { AnimatedGradient } from "@/components/animated-gradient";
 import { Brand } from "@/components/brand";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { SiteNav } from "@/components/site-nav";
+import { AppDownloads } from "@/components/app-downloads";
 
 const features = [
   ["Context before keywords", "A sentence can sound punchy and still make no sense alone. CLPZ scores the setup, hook, payoff, and standalone clarity together."],
@@ -8,23 +9,17 @@ const features = [
   ["Local by design", "Video processing happens in the desktop app on your machine. The website handles the product, purchase, and trusted downloads."],
 ];
 
-function Arrow() { return <span aria-hidden="true">↗</span>; }
 function PearlLink({ href, children, small=false }: { href:string; children:React.ReactNode; small?:boolean }) {
   return <a className={`pearl-button${small?" pearl-button-small":""}`} href={href}><span className="pearl-wrap"><span className="pearl-label"><i>✧</i><i>✦</i>{children}</span></span></a>;
 }
 
 export default function Home() {
-  return <main>
-    <nav className="nav shell" aria-label="Primary navigation">
-      <Brand href="#top" />
-      <div className="nav-links"><a href="#showcase">Showcase</a><a href="#inside">Inside CLPZ</a><a href="#get-clpz">Get CLPZ</a></div>
-      <div className="nav-actions"><ThemeToggle /><a href="/login">Sign in</a><a className="nav-download" href="/download">Download <Arrow /></a></div>
-    </nav>
+  return <><SiteNav /><main id="main-content">
 
     <section className="hero shell" id="top">
       <AnimatedGradient className="hero-gradient" />
       <div className="hero-copy">
-        <p className="kicker"><span /> Desktop video studio</p>
+        <p className="kicker"><span /> Your personal video studio</p>
         <h1>Find the clip<br />inside the video.</h1>
         <p className="lede">CLPZ watches the whole recording, surfaces the moments that stand alone, and gives you the final cut before you lose the idea.</p>
         <div className="hero-actions"><PearlLink href="/download">Download for Windows</PearlLink><a className="button quiet" href="#showcase">See it in action</a></div>
@@ -78,8 +73,17 @@ export default function Home() {
       <div className="proof-grid"><div className="vertical-proof"><div className="safe-zone"><small>9:16 SAFE AREA</small><p>captions that stay<br /><em>inside</em> the frame</p></div></div><div className="proof-copy"><p className="section-index">CAPTIONS + REFRAMING</p><h3>Built for vertical<br />from the first cut.</h3><p>Word-timed captions, centered subjects, and platform-safe layouts are ready before export. You can still move every element.</p><ul><li>Editable word timing</li><li>Automatic 9:16 crop</li><li>Preview before rendering</li></ul></div></div>
     </div></section>
 
-    <section className="get shell" id="get-clpz"><header className="pricing-heading"><p className="section-index">04 / GET CLPZ</p><h2>Start small. Scale when<br />the clips start moving.</h2><p>Credits are used for AI analysis. Editing and local exports stay available in the desktop and mobile apps.</p></header><div className="pricing-grid"><article className="price-card featured"><span className="price-badge">BEST VALUE</span><p>CREATOR</p><h3><strong>$7</strong> / month</h3><ul><li>120 AI credits each month</li><li>Desktop and mobile editors</li><li>Unused credits roll for 60 days</li></ul><a className="checkout-button" href="/buy?plan=creator">Subscribe on Gumroad →</a></article><article className="price-card"><p>50-CREDIT PACK</p><h3><strong>$4</strong> once</h3><ul><li>No subscription required</li><li>Credits never expire</li><li>Use with any CLPZ account</li></ul><a className="checkout-button secondary" href="/buy?plan=credits-50">Buy 50 credits →</a></article><article className="price-card"><p>200-CREDIT PACK</p><h3><strong>$11</strong> once</h3><ul><li>Best for larger projects</li><li>Credits never expire</li><li>Use with any CLPZ account</li></ul><a className="checkout-button secondary" href="/buy?plan=credits-200">Buy 200 credits →</a></article></div><div className="app-downloads"><a href="/download">Download Windows app</a><a href="/download/android">Download Android APK</a></div><p className="pricing-footnote">Payments and receipts are securely handled by Gumroad. Sign in with the same account on the website, Windows app, and Android app.</p></section>
+    <section className="platform-section shell" id="download"><header className="section-heading"><p className="section-index">04 / YOUR STUDIO, EVERYWHERE</p><h2>Made on your device.<br />Ready for the feed.</h2><p>Download the app for free. Keep your footage, drafts, and exports on the device you create with.</p></header><AppDownloads /></section>
+
+    <section className="get shell" id="get-clpz"><header className="pricing-heading"><p className="section-index">05 / PLANS & CREDITS · COMING SOON</p><h2>Make more.<br />On your terms.</h2><p>The editors are free to download. Optional AI credit plans are being prepared; checkout is not open yet.</p></header><div className="pricing-grid"><article className="price-card featured"><span className="price-badge">FOR REGULAR CREATORS</span><p>CREATOR</p><h3><strong>$7</strong> / month</h3><ul><li>120 AI credits each month</li><li>Desktop and mobile editors</li><li>Unused credits roll for 60 days</li></ul><a className="checkout-button" href="/buy?plan=creator">View Creator plan →</a></article><article className="price-card"><p>50-CREDIT PACK</p><h3><strong>$4</strong> once</h3><ul><li>No subscription required</li><li>Credits never expire</li><li>Use with your CLPZ account</li></ul><a className="checkout-button secondary" href="/buy?plan=credits-50">View 50-credit pack →</a></article><article className="price-card"><p>200-CREDIT PACK</p><h3><strong>$11</strong> once</h3><ul><li>Best for larger projects</li><li>Credits never expire</li><li>Use with your CLPZ account</li></ul><a className="checkout-button secondary" href="/buy?plan=credits-200">View 200-credit pack →</a></article></div><p className="pricing-footnote">Planned payments and receipts will be handled by Gumroad. You can use the local editor while payment setup is completed.</p></section>
+
+    <section className="faq shell"><div><p className="section-index">GOOD TO KNOW</p><h2>A little clarity<br />before your first cut.</h2></div><div>
+      <details><summary>Where do I make my clips?</summary><p>In the Windows or Android app. This website is where you download CLPZ, access your account, and find the upcoming credit plans.</p></details>
+      <details><summary>Can I come back and edit later?</summary><p>Android saves your projects on your device, including trim, text, frame, and audio choices. Keep the original video available so you can reopen the draft and export another version.</p></details>
+      <details><summary>Does Android find clips with AI?</summary><p>The current Android preview creates editable drafts from the beginning, middle, and end of your video. Semantic AI moment detection is not included in this mobile preview.</p></details>
+      <details><summary>Do my projects sync between devices?</summary><p>Your CLPZ account is shared, but footage and drafts stay local. Project syncing between Windows and Android is not available yet.</p></details>
+    </div></section>
 
     <footer className="footer shell"><Brand href="#top" /><p>Turn long video into the short worth watching.</p><div><a href="/privacy">Privacy</a><a href="/terms">Terms</a><span>© 2026 CLPZ</span></div></footer>
-  </main>;
+  </main></>;
 }

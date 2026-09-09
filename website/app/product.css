@@ -1,0 +1,111 @@
+/* Shared storefront interaction and layout refinements. */
+:root{--muted:#645e53}.dark{--muted:#b0a89a}
+h1,h2,h3,.manifesto-copy,.platform-card h3,.account-plan h2{font-family:"Manrope","DM Sans",Arial,sans-serif!important}
+button,input,.nav-cta{font-family:"DM Sans",Arial,sans-serif!important}
+.auth-card{background:rgba(250,248,239,.94)!important;border-color:rgba(255,255,255,.55)!important;box-shadow:0 25px 80px #0003}
+.dark .auth-card{background:rgba(22,24,22,.94)!important;border-color:#ffffff24!important}
+.auth-nav .brand-logo{padding:10px 13px;border-radius:10px;background:var(--black)}
+.auth-card .auth-form{gap:12px}
+.auth-card .password-field input{width:100%}
+.auth-form label>span{display:flex;gap:8px;justify-content:space-between;align-items:center}
+.auth-form label i{font-size:11px;font-style:normal;font-weight:400}
+.auth-card .auth-switch{line-height:1.6;color:var(--muted)}
+.auth-card>small{line-height:1.8;color:var(--muted)}
+::selection{background:#f0a030;color:#17120b}
+:focus-visible{outline:2px solid var(--gold);outline-offset:5px}
+button,a,input,summary{-webkit-tap-highlight-color:transparent}
+button,a{touch-action:manipulation}
+[id]{scroll-margin-top:110px}
+.skip-link{position:fixed;top:-100px;left:20px;z-index:100;padding:14px 20px;background:var(--ink);color:var(--black);border-radius:8px}
+.skip-link:focus{top:12px}
+.site-header{position:relative;z-index:20;background:var(--black)}
+.site-header .nav{height:88px}
+.nav-cta{padding:12px 18px;border-radius:10px;background:var(--ink);color:var(--black)!important;display:flex;gap:18px;font-weight:600}
+.menu-toggle{display:none;width:44px;height:44px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;font-size:20px}
+.mobile-menu{display:grid;padding:14px 0 22px;gap:2px}
+.mobile-menu a{padding:16px 12px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;font-size:16px}
+.hero{gap:46px;min-height:690px;padding-block:84px 96px}
+.hero h1{font-size:clamp(56px,5.8vw,84px);line-height:1.02}
+.hero .lede{font-size:17px;max-width:480px}
+.hero-actions{flex-wrap:wrap}
+.pearl-button{animation:none;max-width:100%}
+.pearl-label{mask-image:none!important;-webkit-mask-image:none!important;color:#f6f2e9;position:relative;z-index:2}
+.pearl-wrap{min-height:54px}
+.button{border-radius:10px;min-height:52px}
+.availability{font-size:12px;line-height:1.9;letter-spacing:0}
+.manifesto{padding-block:78px}
+.showcase{padding-block:88px}
+.showcase-row{padding-block:72px;gap:7vw}
+.score-board,.editor-board,.batch-board{border-radius:18px;overflow:hidden;color:#f5f0e6;--gold:#ffbd52}
+.score-head small,.score-note,.batch-item>small{color:#a49b8c}
+.showcase-number{font-size:52px;opacity:.6}
+.editor-board .edit-frame p{color:#f5f0e6}
+.dark .inside{background:#10100e;color:var(--ink)}
+.dark .inside .section-index{color:var(--gold)}
+.dark .inside .feature p,.dark .inside .split-heading>p,.dark .inside .proof-copy>p{color:var(--muted)}
+.dark .inside .feature-list,.dark .inside .feature,.dark .inside .proof-copy ul{border-color:var(--line)}
+.inside{padding-block:88px}
+.vertical-proof{border-radius:22px}
+.get{padding-block:88px}
+.price-card{border-radius:18px;padding:32px;min-height:345px}
+.price-card.featured{background:linear-gradient(145deg,rgba(240,160,48,.08),transparent 60%),var(--panel);box-shadow:none}
+.price-card ul{font-size:13px;line-height:1.65}
+.checkout-button{min-height:52px;font-size:13px;box-shadow:none}
+.price-card h3 strong{font-size:50px}
+.pricing-footnote{max-width:700px;margin-inline:auto;font-size:12px;line-height:1.8}
+.platform-section{padding-block:76px;border-top:1px solid var(--line)}
+.platform-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.platform-card{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:24px;padding:36px;background:var(--panel)}
+.platform-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:30px}
+.platform-symbol{font-size:34px;line-height:1;color:var(--gold)}
+.release-tag{border:1px solid var(--line);border-radius:30px;padding:7px 11px;color:var(--muted);font-size:11px}
+.platform-card h3{font:500 clamp(25px,3vw,39px)/1.14 "Manrope";letter-spacing:-.04em;margin-bottom:18px}
+.platform-card>p{color:var(--muted);line-height:1.75;max-width:450px}
+.platform-card ul{list-style:none;padding:0;display:grid;gap:10px;color:var(--muted);font-size:13px;margin:12px 0 32px}
+.platform-card li:before{content:"✓";color:var(--gold);margin-right:10px}
+.download-action{margin-top:auto;display:flex;align-items:center;justify-content:space-between;padding:17px 20px;background:var(--ink);color:var(--black);border-radius:12px;font-size:14px;font-weight:600;transition:transform .18s}
+.download-action:hover{transform:translateY(-2px)}
+.mobile-platform .download-action{background:#f0a030;color:#17120b}
+.platform-card small{color:var(--muted);font-size:11px;margin-top:14px}
+.platform-section .section-heading{margin-bottom:38px}
+.platform-section .section-heading>p{max-width:560px;color:var(--muted);line-height:1.7;margin-top:20px}
+.apps-page{padding-block:84px}
+.apps-page h1{font-size:clamp(54px,7vw,90px);line-height:1.03;max-width:820px}
+.page-intro{max-width:560px;color:var(--muted);font-size:18px;line-height:1.7;margin-bottom:48px}
+.install-guide{margin-top:80px;display:grid;grid-template-columns:1fr 1fr;gap:60px;border-top:1px solid var(--line);padding-top:50px}
+.install-guide h2,.faq h2{font:500 clamp(32px,4vw,52px)/1.12 "Manrope";letter-spacing:-.04em}
+.install-guide ol{padding:0 0 0 22px;margin:0;display:grid;gap:22px}
+.install-guide li{padding-left:10px}
+.install-guide p{color:var(--muted);line-height:1.7;font-size:14px;margin:8px 0 0}
+.download-note{border-top:1px solid var(--line);margin-top:40px;padding-top:22px;color:var(--muted);font-size:12px;line-height:1.8;max-width:720px}
+.faq{padding-block:72px;border-top:1px solid var(--line);display:grid;grid-template-columns:1fr 1.3fr;gap:70px}
+.faq details{border-bottom:1px solid var(--line)}
+.faq summary{cursor:pointer;list-style:none;padding:22px 30px 22px 0;position:relative;font-weight:600;line-height:1.5}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary:after{content:"+";position:absolute;right:0;color:var(--gold);font-size:22px;font-weight:400}
+.faq details[open] summary:after{content:"−"}
+.faq details p{color:var(--muted);line-height:1.8;font-size:14px;padding-bottom:15px;max-width:560px}
+.footer{padding-block:26px;min-height:110px}
+.account{padding-top:65px}
+.account h1{font-size:clamp(40px,6vw,64px)}
+.account .platform-grid{margin-top:36px}
+.account-email{font-size:15px}
+.account-plan{padding:28px;border:1px solid var(--line);border-radius:18px;margin-top:24px;display:flex;justify-content:space-between;align-items:center;gap:24px}
+.account-plan h2{font:500 23px "Manrope";margin:8px 0}
+.account-plan p{margin:0;color:var(--muted);font-size:14px;line-height:1.7}
+.auth-card .password-field{position:relative;display:block}
+.auth-card .password-field input{padding-right:64px}
+.password-reveal{position:absolute;right:4px;top:3px;min-width:52px;height:37px;border:0;background:transparent;color:var(--muted);font-size:11px;cursor:pointer}
+.auth-submit{min-height:49px}
+.auth-card .forgot-password{border:0;background:none;color:var(--muted);text-align:right;font:inherit;font-size:12px;cursor:pointer;justify-self:end;text-decoration:underline;text-underline-offset:3px}
+.checkout-status{max-width:620px;width:calc(100% - 32px);margin-block:70px;padding:42px;border-radius:24px}
+.checkout-status h1{line-height:1.1}
+.checkout-status .checkout-button{max-width:none}
+.checkout-secondary{display:block;margin-top:20px;color:var(--muted);font-size:13px;text-decoration:underline;text-underline-offset:4px}
+.service-state{text-align:center;padding:100px 24px;max-width:660px;margin:auto}
+.service-state h1{font-size:clamp(38px,6vw,60px);line-height:1.15}
+.service-state p{color:var(--muted);line-height:1.7}
+.service-state .button{margin-top:18px}
+@media(max-width:980px){.site-header .nav-links{gap:18px}.hero{gap:48px}.hero-copy{max-width:680px}.platform-card{padding:28px}.faq{gap:36px}}
+@media(max-width:700px){.site-header .nav{height:76px}.site-header .nav-links,.desktop-signin{display:none}.menu-toggle{display:block}.nav-actions{gap:8px}.nav-cta{font-size:11px;padding:12px;gap:9px}.platform-grid{grid-template-columns:1fr}.hero{padding-block:50px 60px}.hero h1{font-size:clamp(49px,11vw,65px)}.hero-actions{gap:12px}.platform-section,.get,.showcase,.inside{padding-block:56px}.showcase-row{padding-block:54px}.manifesto{padding-block:56px}.platform-card{padding:25px}.faq,.install-guide{grid-template-columns:1fr;gap:24px}.faq{padding-block:50px}.apps-page{padding-top:54px}.account-plan{align-items:flex-start;flex-direction:column}.checkout-status{padding:30px 22px}.checkout-status h1{font-size:34px}.nav .brand-logo img{height:25px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
