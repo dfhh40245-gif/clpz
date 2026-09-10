@@ -2,9 +2,8 @@
 :root{--muted:#645e53}.dark{--muted:#b0a89a}
 h1,h2,h3,.manifesto-copy,.platform-card h3,.account-plan h2{font-family:"Manrope","DM Sans",Arial,sans-serif!important}
 button,input,.nav-cta{font-family:"DM Sans",Arial,sans-serif!important}
-.auth-card{background:rgba(250,248,239,.94)!important;border-color:rgba(255,255,255,.55)!important;box-shadow:0 25px 80px #0003}
-.dark .auth-card{background:rgba(22,24,22,.94)!important;border-color:#ffffff24!important}
-.auth-nav .brand-logo{padding:10px 13px;border-radius:10px;background:var(--black)}
+.auth-card{background:rgba(250,248,239,.82)!important;border-color:rgba(255,255,255,.55)!important;box-shadow:0 25px 80px #0003}
+.dark .auth-card{background:rgba(22,24,22,.82)!important;border-color:#ffffff24!important}
 .auth-card .auth-form{gap:12px}
 .auth-card .password-field input{width:100%}
 .auth-form label>span{display:flex;gap:8px;justify-content:space-between;align-items:center}
@@ -24,35 +23,7 @@ button,a{touch-action:manipulation}
 .menu-toggle{display:none;width:44px;height:44px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;font-size:20px}
 .mobile-menu{display:grid;padding:14px 0 22px;gap:2px}
 .mobile-menu a{padding:16px 12px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;font-size:16px}
-.hero{gap:46px;min-height:690px;padding-block:84px 96px}
-.hero h1{font-size:clamp(56px,5.8vw,84px);line-height:1.02}
-.hero .lede{font-size:17px;max-width:480px}
-.hero-actions{flex-wrap:wrap}
-.pearl-button{animation:none;max-width:100%}
 .pearl-label{mask-image:none!important;-webkit-mask-image:none!important;color:#f6f2e9;position:relative;z-index:2}
-.pearl-wrap{min-height:54px}
-.button{border-radius:10px;min-height:52px}
-.availability{font-size:12px;line-height:1.9;letter-spacing:0}
-.manifesto{padding-block:78px}
-.showcase{padding-block:88px}
-.showcase-row{padding-block:72px;gap:7vw}
-.score-board,.editor-board,.batch-board{border-radius:18px;overflow:hidden;color:#f5f0e6;--gold:#ffbd52}
-.score-head small,.score-note,.batch-item>small{color:#a49b8c}
-.showcase-number{font-size:52px;opacity:.6}
-.editor-board .edit-frame p{color:#f5f0e6}
-.dark .inside{background:#10100e;color:var(--ink)}
-.dark .inside .section-index{color:var(--gold)}
-.dark .inside .feature p,.dark .inside .split-heading>p,.dark .inside .proof-copy>p{color:var(--muted)}
-.dark .inside .feature-list,.dark .inside .feature,.dark .inside .proof-copy ul{border-color:var(--line)}
-.inside{padding-block:88px}
-.vertical-proof{border-radius:22px}
-.get{padding-block:88px}
-.price-card{border-radius:18px;padding:32px;min-height:345px}
-.price-card.featured{background:linear-gradient(145deg,rgba(240,160,48,.08),transparent 60%),var(--panel);box-shadow:none}
-.price-card ul{font-size:13px;line-height:1.65}
-.checkout-button{min-height:52px;font-size:13px;box-shadow:none}
-.price-card h3 strong{font-size:50px}
-.pricing-footnote{max-width:700px;margin-inline:auto;font-size:12px;line-height:1.8}
 .platform-section{padding-block:76px;border-top:1px solid var(--line)}
 .platform-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
 .platform-card{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:24px;padding:36px;background:var(--panel)}
@@ -85,11 +56,7 @@ button,a{touch-action:manipulation}
 .faq summary:after{content:"+";position:absolute;right:0;color:var(--gold);font-size:22px;font-weight:400}
 .faq details[open] summary:after{content:"−"}
 .faq details p{color:var(--muted);line-height:1.8;font-size:14px;padding-bottom:15px;max-width:560px}
-.footer{padding-block:26px;min-height:110px}
-.account{padding-top:65px}
-.account h1{font-size:clamp(40px,6vw,64px)}
 .account .platform-grid{margin-top:36px}
-.account-email{font-size:15px}
 .account-plan{padding:28px;border:1px solid var(--line);border-radius:18px;margin-top:24px;display:flex;justify-content:space-between;align-items:center;gap:24px}
 .account-plan h2{font:500 23px "Manrope";margin:8px 0}
 .account-plan p{margin:0;color:var(--muted);font-size:14px;line-height:1.7}
@@ -106,6 +73,24 @@ button,a{touch-action:manipulation}
 .service-state h1{font-size:clamp(38px,6vw,60px);line-height:1.15}
 .service-state p{color:var(--muted);line-height:1.7}
 .service-state .button{margin-top:18px}
-@media(max-width:980px){.site-header .nav-links{gap:18px}.hero{gap:48px}.hero-copy{max-width:680px}.platform-card{padding:28px}.faq{gap:36px}}
-@media(max-width:700px){.site-header .nav{height:76px}.site-header .nav-links,.desktop-signin{display:none}.menu-toggle{display:block}.nav-actions{gap:8px}.nav-cta{font-size:11px;padding:12px;gap:9px}.platform-grid{grid-template-columns:1fr}.hero{padding-block:50px 60px}.hero h1{font-size:clamp(49px,11vw,65px)}.hero-actions{gap:12px}.platform-section,.get,.showcase,.inside{padding-block:56px}.showcase-row{padding-block:54px}.manifesto{padding-block:56px}.platform-card{padding:25px}.faq,.install-guide{grid-template-columns:1fr;gap:24px}.faq{padding-block:50px}.apps-page{padding-top:54px}.account-plan{align-items:flex-start;flex-direction:column}.checkout-status{padding:30px 22px}.checkout-status h1{font-size:34px}.nav .brand-logo img{height:25px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+/* Refine the original storefront without replacing its composition. */
+.nav a,.nav-signout,.theme-toggle{min-height:44px;display:inline-flex;align-items:center}
+.nav-links a{white-space:nowrap}
+.hero-actions{flex-wrap:wrap}
+.pearl-button{max-width:100%}
+.preview-pane .portrait-frame p{color:#f5f0e6}
+@media(max-width:700px){
+  .nav{gap:12px;flex-wrap:wrap;height:auto;min-height:82px;padding-block:16px}
+  .nav-actions{gap:12px}
+  .hero-actions{gap:12px}
+  .platform-grid{grid-template-columns:1fr}
+  .platform-card{padding:25px}
+  .install-guide{grid-template-columns:1fr;gap:24px}
+  .apps-page{padding-top:54px}
+  .site-header .nav-links,.desktop-signin{display:none}
+  .menu-toggle{display:block}
+  .nav-cta{font-size:11px;padding:12px;gap:9px}
+  .account-plan{align-items:flex-start;flex-direction:column}
+  .checkout-status{padding:30px 22px}
+}

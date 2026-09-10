@@ -48,8 +48,8 @@ export function AuthForm() {
 
   return <section className="auth-card">
     <Brand />
-    <h1>{mode === "login" ? "Back to creating." : "Your studio starts here."}</h1>
-    <p>{mode === "login" ? "One account for your CLPZ apps." : "Create an account. Make your next great clip."}</p>
+    <h1>Welcome {mode === "login" ? "Back" : "to CLPZ"}</h1>
+    <p>{mode === "login" ? "Sign in to continue" : "Create your account to get started"}</p>
     <div className="auth-tabs" role="group" aria-label="Account action"><button type="button" aria-pressed={mode === "login"} disabled={busy} className={mode === "login" ? "active" : ""} onClick={() => switchMode("login")}>Sign in</button><button type="button" aria-pressed={mode === "signup"} disabled={busy} className={mode === "signup" ? "active" : ""} onClick={() => switchMode("signup")}>Create account</button></div>
     {message && <p className={success ? "auth-message" : "auth-error"} role="status">{message}</p>}
     <form className="auth-form" onSubmit={submit} aria-busy={busy}>
@@ -61,7 +61,7 @@ export function AuthForm() {
     </form>
     <div className="auth-divider"><span>OR</span></div>
     <GoogleButton />
-    <p className="auth-switch">Just here to edit? <Link href="/apps">Get the free app ↗</Link></p>
+    <p className="auth-switch">{mode === "login" ? "Don’t have an account?" : "Already have an account?"} <button type="button" disabled={busy} onClick={() => switchMode(mode === "login" ? "signup" : "login")}>{mode === "login" ? "Sign Up" : "Log In"}</button></p>
     <small>By continuing, you agree to the <Link href="/terms">Terms</Link> and <Link href="/privacy">Privacy Policy</Link>.</small>
   </section>;
 }
