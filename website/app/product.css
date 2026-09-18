@@ -17,12 +17,16 @@ button,a{touch-action:manipulation}
 [id]{scroll-margin-top:110px}
 .skip-link{position:fixed;top:-100px;left:20px;z-index:100;padding:14px 20px;background:var(--ink);color:var(--black);border-radius:8px}
 .skip-link:focus{top:12px}
-.site-header{position:relative;z-index:20;background:var(--black)}
-.site-header .nav{height:88px}
+/* Floating overlay navbar: fully transparent, sits on the hero. */
+.site-header{position:absolute;top:0;left:0;right:0;z-index:20;background:transparent}
+.site-header .nav{position:relative;z-index:3;height:82px;border-bottom:0}
+.nav-scrim{position:absolute;inset:0 0 auto;height:130px;background:linear-gradient(180deg,rgba(5,5,5,.55),rgba(5,5,5,0));z-index:0;pointer-events:none}
+@media(min-width:981px){.site-header .nav-links{position:absolute;left:50%;transform:translateX(-50%);justify-content:center}}
 .nav-cta{padding:12px 18px;border-radius:10px;background:var(--ink);color:var(--black)!important;display:flex;gap:18px;font-weight:600}
-.menu-toggle{display:none;width:44px;height:44px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:10px;font-size:20px}
-.mobile-menu{display:grid;padding:14px 0 22px;gap:2px}
-.mobile-menu a{padding:16px 12px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;font-size:16px}
+.menu-toggle{display:none;width:44px;height:44px;border:0;background:transparent;color:var(--ink);font-size:22px;cursor:pointer}
+.mobile-menu{position:fixed;inset:0;z-index:2;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;padding:100px 24px;background:rgba(8,7,5,.96)}
+.mobile-menu a{padding:14px;width:min(320px,100%);display:flex;justify-content:space-between;font-size:20px;font-family:"Manrope","DM Sans",Arial,sans-serif;letter-spacing:.02em;color:#e9e3d7;border-radius:10px;transition:color .2s ease,background .2s ease}
+.mobile-menu a:hover{color:var(--gold);background:rgba(255,189,82,.08)}
 .pearl-label{mask-image:none!important;-webkit-mask-image:none!important;color:#f6f2e9;position:relative;z-index:2}
 .platform-section{padding-block:76px;border-top:1px solid var(--line)}
 .platform-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
@@ -76,20 +80,22 @@ button,a{touch-action:manipulation}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 /* Refine the original storefront without replacing its composition. */
 .nav a,.nav-signout,.theme-toggle{min-height:44px;display:inline-flex;align-items:center}
+.nav-signout{margin-left:auto;background:none;border:0;color:var(--muted);cursor:pointer;font-size:13px}
 .nav-links a{white-space:nowrap}
 .hero-actions{flex-wrap:wrap}
 .pearl-button{max-width:100%}
 .preview-pane .portrait-frame p{color:#f5f0e6}
 @media(max-width:700px){
-  .nav{gap:12px;flex-wrap:wrap;height:auto;min-height:82px;padding-block:16px}
+  .nav{gap:12px;flex-wrap:nowrap;height:auto;min-height:82px;padding-block:0}
   .nav-actions{gap:12px}
   .hero-actions{gap:12px}
   .platform-grid{grid-template-columns:1fr}
   .platform-card{padding:25px}
   .install-guide{grid-template-columns:1fr;gap:24px}
   .apps-page{padding-top:54px}
-  .site-header .nav-links,.desktop-signin{display:none}
+  .site-header .nav-links{display:none}
   .menu-toggle{display:block}
+  .desktop-signin{display:none}
   .nav-cta{font-size:11px;padding:12px;gap:9px}
   .account-plan{align-items:flex-start;flex-direction:column}
   .checkout-status{padding:30px 22px}

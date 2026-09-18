@@ -12,7 +12,7 @@ export default async function AccountPage() {
   let account: Awaited<ReturnType<typeof readCloudAccount>> | null = null;
   try { account = await readCloudAccount(supabase, user.id); } catch { /* Display an unavailable state. */ }
   return <main>
-    <nav className="nav shell"><Link className="brand" href="/"><span className="brand-mark"><i>C</i></span><span>CLPZ</span></Link><form action="/auth/signout" method="post"><button className="nav-signout" type="submit">Sign out</button></form></nav>
+    <nav className="nav shell"><form action="/auth/signout" method="post"><button className="nav-signout" type="submit">Sign out</button></form></nav>
     <section className="account shell">
       <p className="section-index">YOUR ACCOUNT</p><h1>Hello, {name}.</h1><p className="account-email">{user.email}</p>
       <section className="account-panel"><div><small>CLOUD ACCESS</small><h2>Subscription and credits</h2>

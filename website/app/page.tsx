@@ -22,7 +22,7 @@ export default function Home() {
       <div className="nav-actions"><ThemeToggle /><NavAuth /><a className="nav-download" href="/download">Download <Arrow /></a></div>
     </nav>
 
-    <section className="hero shell" id="top">
+    <section className="hero shell" id="top" style={{ paddingTop: 150 }}>
       <AnimatedGradient className="hero-gradient" />
       <div className="hero-copy">
         <p className="kicker"><span /> Desktop video studio</p>

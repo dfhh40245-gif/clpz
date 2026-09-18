@@ -10,6 +10,7 @@ export function SiteNav() {
   const [open, setOpen] = useState(false);
   return <header className="site-header">
     <a className="skip-link" href="#main-content">Skip to content</a>
+    <div className="nav-scrim" aria-hidden="true" />
     <nav className="nav shell" aria-label="Main navigation">
       <Brand />
       <div className="nav-links"><Link href="/#showcase">The studio</Link><Link href="/apps">Get the app</Link><Link href="/#get-clpz">Plans & credits</Link></div>
