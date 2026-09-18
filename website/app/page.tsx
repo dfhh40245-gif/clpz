@@ -1,6 +1,7 @@
 import { AnimatedGradient } from "@/components/animated-gradient";
 import { Brand } from "@/components/brand";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { NavAuth } from "@/components/nav-auth";
 
 const features = [
   ["Context before keywords", "A sentence can sound punchy and still make no sense alone. CLPZ scores the setup, hook, payoff, and standalone clarity together."],
@@ -18,7 +19,7 @@ export default function Home() {
     <nav className="nav shell" aria-label="Primary navigation">
       <Brand href="#top" />
       <div className="nav-links"><a href="#showcase">Showcase</a><a href="#inside">Inside CLPZ</a><a href="#get-clpz">Get CLPZ</a></div>
-      <div className="nav-actions"><ThemeToggle /><a href="/login">Sign in</a><a className="nav-download" href="/download">Download <Arrow /></a></div>
+      <div className="nav-actions"><ThemeToggle /><NavAuth /><a className="nav-download" href="/download">Download <Arrow /></a></div>
     </nav>
 
     <section className="hero shell" id="top">
