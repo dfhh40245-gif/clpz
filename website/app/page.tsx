@@ -40,15 +40,14 @@ export default function Home() {
             <aside className="rail" aria-hidden="true"><b>+</b><span>⌁</span><span>◫</span><span>CC</span><span>↗</span></aside>
             <div className="preview-pane"><div className="preview-label">PREVIEW · 00:42</div><div className="portrait-frame"><div className="speaker-shape" /><p>the part nobody tells you <em>before</em> you start</p></div><div className="transport"><span>00:17.8</span><b>▶</b><span>00:42.1</span></div></div>
             <div className="moments-pane"><div className="pane-head"><span>FOUND MOMENTS</span><b>6</b></div>
-              <article className="moment selected"><strong>01</strong><div><b>The mistake that changed the launch</b><small>00:14 — 00:56</small></div><mark>9.2</mark></article>
-              <article className="moment"><strong>02</strong><div><b>What we learned in week one</b><small>04:18 — 05:02</small></div><mark>8.7</mark></article>
-              <article className="moment"><strong>03</strong><div><b>The advice we ignored</b><small>09:31 — 10:04</small></div><mark>8.1</mark></article>
+              <article className="moment selected"><strong>01</strong><div><b>The mistake that changed the launch</b><small>00:14 — 00:56</small></div></article>
+              <article className="moment"><strong>02</strong><div><b>What we learned in week one</b><small>04:18 — 05:02</small></div></article>
+              <article className="moment"><strong>03</strong><div><b>The advice we ignored</b><small>09:31 — 10:04</small></div></article>
               <div className="analysis"><span>Context</span><span>Clarity</span><span>Payoff</span></div>
             </div>
           </div>
           <div className="timeline"><div className="timecode"><span>00:00</span><span>00:15</span><span>00:30</span><span>00:45</span></div><div className="track">{Array.from({length:12}).map((_,i)=><i key={i}/>)}</div><div className="caption-track"><b>the part</b><b>nobody</b><b>tells you</b><b className="active">before</b><b>you start</b></div><div className="playhead" /></div>
         </div>
-        <div className="score-float"><small>STANDALONE SCORE</small><strong>9.2</strong><span>Ready to refine</span></div>
       </div>
     </section>
 
@@ -59,7 +58,7 @@ export default function Home() {
 
       <article className="showcase-row">
         <div className="showcase-copy"><span className="showcase-number">01</span><p className="section-index">MOMENT DETECTION</p><h3>It reads for the whole idea.</h3><p>CLPZ checks context, completeness, pacing, and whether the moment makes sense without the rest of the video.</p><div className="tag-cloud"><span>Context</span><span>Clarity</span><span>Payoff</span><span>Standalone clarity</span></div></div>
-        <div className="score-board"><div className="score-head"><div><b>“the moment everything clicked”</b><small>24:41 — 25:23 · 0:42</small></div><strong>9.4</strong></div>{[["Clarity","88%","8.8"],["Context","94%","9.4"],["Completeness","97%","9.7"],["Payoff","91%","9.1"]].map(([label,width,value])=><div className="metric" key={label}><span>{label}</span><div><i style={{width}}/></div><b>{value}</b></div>)}<small className="score-note">Illustrative analysis</small></div>
+        <div className="score-board"><div className="score-head"><div><b>“the moment everything clicked”</b><small>24:41 — 25:23 · 0:42</small></div><span className="score-flag">Ready to refine</span></div><ul className="quality-list">{["Trims to a complete idea","Captions carried over exactly","Vertical crop keeps both speakers in frame","Audio normalized for short-form"].map(item=><li key={item}><span>✓</span>{item}</li>)}</ul><small className="score-note">Automatic pipeline checks</small></div>
       </article>
 
       <article className="showcase-row reverse">

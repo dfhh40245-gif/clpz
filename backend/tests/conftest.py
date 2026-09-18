@@ -37,6 +37,16 @@ os.environ.setdefault("TRANSCRIBE_SUPERVISED", "0")
 import config as _clpz_config  # noqa: E402
 _clpz_config.TRANSCRIBE_SUPERVISED = False
 
+# Unlimited experimental mode must never leak into the suite: ledger tests
+# observe charges/refunds deterministically and a leaked flag would turn
+# every charge into a no-op pass. Refuse to run if it is set.
+if os.environ.get("CLPZ_UNLIMITED") == "1":
+    raise RuntimeError(
+        "CLPZ_UNLIMITED=1 is set in this environment. The test suite "
+        "verifies real ledger behavior and must not run in unlimited "
+        "experimental mode. Unset it and rerun."
+    )
+
 # Isolated per-run data dir: unique under the system temp path, never the
 # repo's backend/data or the desktop's real user data.
 RUN_ID = uuid.uuid4().hex[:8]

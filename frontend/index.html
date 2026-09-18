@@ -152,11 +152,6 @@
     background:var(--panel); border:1px solid var(--border);
     position:relative;
   }
-  .phone-score{
-    position:absolute; top:10px; right:10px; background:var(--accent-soft); border:1px solid rgba(239,169,58,.35);
-    color:var(--accent); font-size:11px; font-weight:700; padding:3px 7px; border-radius:20px;
-    backdrop-filter:blur(8px);
-  }
   .phone-caption{
     position:absolute; bottom:34px; left:10px; right:10px; text-align:center;
     font-size:14px; font-weight:700; line-height:1.35; color:#f2f1ec;
@@ -210,21 +205,19 @@
     content:""; width:5px; height:5px; border-radius:50%; background:var(--accent); flex-shrink:0;
   }
 
-  /* moment score card */
-  .score-card{
+  /* feature visual panel (replaces the old score card) */
+  .quality-card{
     background:linear-gradient(145deg, var(--panel) 0%, rgba(25,25,28,.5) 100%); border:1px solid var(--border); border-radius:var(--r-lg); padding:var(--s6);
     box-shadow:0 4px 24px rgba(0,0,0,.3);
   }
-  .score-card-top{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:var(--s5); }
-  .score-card-top .clip-title{ font-size:14.5px; font-weight:600; }
-  .score-card-top .clip-time{ font-size:12px; color:var(--ink-faint); margin-top:2px; }
-  .score-overall{ font-family:var(--font-mono); font-size:22px; font-weight:600; color:var(--accent); }
-  .score-row{ display:flex; align-items:center; gap:var(--s3); margin-top:var(--s3); }
-  .score-row .label{ width:108px; font-size:12.5px; color:var(--ink-dim); flex-shrink:0; }
-  .score-row .bar{ flex:1; height:5px; background:var(--panel-raised); border-radius:3px; overflow:hidden; }
-  .score-row .bar i{ display:block; height:100%; background:var(--accent); border-radius:3px; }
-  .score-row .val{ width:30px; text-align:right; font-family:var(--font-mono); font-size:12px; color:var(--ink-dim); }
-  .score-note{ margin-top:var(--s5); font-size:12.5px; color:var(--ink-faint); }
+  .quality-card-top{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:var(--s5); }
+  .quality-card-top .clip-title{ font-size:14.5px; font-weight:600; }
+  .quality-card-top .clip-time{ font-size:12px; color:var(--ink-faint); margin-top:2px; }
+  .quality-flag{ font-family:var(--font-mono); font-size:12px; font-weight:600; color:var(--accent); }
+  .quality-list{ list-style:none; margin:0; padding:0; }
+  .quality-list li{ display:flex; align-items:baseline; gap:10px; margin-top:var(--s3); font-size:13px; color:var(--ink-dim); }
+  .quality-list li b{ color:var(--accent); }
+  .quality-note{ margin-top:var(--s5); font-size:12.5px; color:var(--ink-faint); }
 
   /* editor mock */
   .editor-mock{
@@ -384,7 +377,6 @@
         <path d="M4 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
       <div class="phone">
-        <span class="phone-score">9.4</span>
         <p class="phone-caption">the moment <b>everything</b> clicked</p>
         <div class="phone-time"><span class="mono">0:11</span><span class="mono">0:42</span></div>
       </div>
@@ -443,19 +435,21 @@
         </div>
       </div>
       <div class="feature-visual">
-        <div class="score-card">
-          <div class="score-card-top">
+        <div class="quality-card">
+          <div class="quality-card-top">
             <div>
               <div class="clip-title">"the moment everything clicked"</div>
               <div class="clip-time mono">24:41 – 25:23 · 0:42</div>
             </div>
-            <div class="score-overall">9.4</div>
+            <span class="quality-flag">Ready to refine</span>
           </div>
-          <div class="score-row"><span class="label">Clarity</span><div class="bar"><i style="width:88%"></i></div><span class="val mono">8.8</span></div>
-          <div class="score-row"><span class="label">Context</span><div class="bar"><i style="width:94%"></i></div><span class="val mono">9.4</span></div>
-          <div class="score-row"><span class="label">Completeness</span><div class="bar"><i style="width:97%"></i></div><span class="val mono">9.7</span></div>
-          <div class="score-row"><span class="label">Payoff</span><div class="bar"><i style="width:91%"></i></div><span class="val mono">9.1</span></div>
-          <div class="score-note">Example score shown for illustration.</div>
+          <ul class="quality-list">
+            <li><b>✓</b> Trims to a complete idea</li>
+            <li><b>✓</b> Captions carried over exactly</li>
+            <li><b>✓</b> Vertical crop keeps both speakers in frame</li>
+            <li><b>✓</b> Audio normalized for short-form</li>
+          </ul>
+          <div class="quality-note">Automatic pipeline checks.</div>
         </div>
       </div>
     </div>
@@ -511,7 +505,6 @@
     <div class="feature-row reverse reveal">
       <div class="feature-visual" style="display:flex; justify-content:center;">
         <div class="phone phone-lg">
-          <span class="phone-score">9.1</span>
           <p class="phone-caption" style="font-size:17px;">nobody tells you this <b>before</b> you start</p>
           <div class="phone-time"><span class="mono">0:03</span><span class="mono">0:29</span></div>
         </div>

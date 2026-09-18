@@ -68,3 +68,8 @@ website/tsconfig.tsbuildinfo
 *.tsbuildinfo
 *.jks
 *.keystore
+
+# Local-only experimental launcher and its data (never commit, never ship)
+scripts/local-experimental.cmd
+data-experimental/
+docs/local-experimental/

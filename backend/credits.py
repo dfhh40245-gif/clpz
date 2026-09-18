@@ -22,8 +22,20 @@ Refund safety:
 """
 from __future__ import annotations
 
+import os
+
 import config
 import database as db
+
+# ── Experimental local mode ───────────────────────────────────────
+# CLPZ_UNLIMITED=1 turns the local ledger into an unlimited pass:
+# every charge succeeds without touching balances and every balance
+# reads as generously funded. Nothing is written to the ledger in this
+# mode, so reconciliation and cloud entitlements stay meaningful.
+# Intended for local experiments ONLY — never enable it on a shared
+# server or in a packaged build.
+UNLIMITED = os.getenv("CLPZ_UNLIMITED", "0") == "1"
+UNLIMITED_BALANCE = 999_999
 
 # ── Configurable pricing ──────────────────────────────────────────
 COST_PER_FORGE = int(config.COST_PER_FORGE)
@@ -49,6 +61,8 @@ def ensure_signup_bonus(user_id: str) -> int:
 
 def get_balance(user_id: str) -> int:
     """Return current credit balance (always >= 0)."""
+    if UNLIMITED:
+        return UNLIMITED_BALANCE
     return db.get_credit_balance(user_id)
 
 
@@ -63,6 +77,10 @@ def check_and_charge(user_id: str, amount: int, related_id: str = "",
     cached result without deducting again. The cached result is stored in
     the same transaction as the charge itself.
     """
+    if UNLIMITED:
+        # Unlimited mode: approve every charge without a ledger write.
+        return True, UNLIMITED_BALANCE
+
     # Replay path: a completed operation returns its original result.
     if idempotency_key:
         cached = db.check_idempotency(idempotency_key)
@@ -88,6 +106,9 @@ def refund(user_id: str, amount: int, related_id: str = "", reason: str = "") ->
     calls return the correct balance without exceptions and never refund
     twice.
     """
+    if UNLIMITED:
+        # Unlimited mode: refund nothing — balances never moved.
+        return get_balance(user_id)
     _, new_bal = db.refund_once(user_id, amount, related_id=related_id, reason=reason)
     return new_bal
 
@@ -95,6 +116,8 @@ def refund(user_id: str, amount: int, related_id: str = "", reason: str = "") ->
 def add_credits(user_id: str, amount: int, txn_type: str = "purchase",
                 description: str = "") -> int:
     """Add credits (purchase, admin adjustment, etc.). Returns new balance."""
+    if UNLIMITED:
+        return get_balance(user_id)
     return db.add_credits(user_id, amount, txn_type=txn_type, description=description)
 
 
