@@ -215,6 +215,7 @@
     :root{--bg:#0c0d0d;--surface:#171919;--surface-2:#202322;--line:#303331;--text:#f6f2e9;--muted:#aca99f;--quiet:#94968d;--gold:#ffc369;--green:#aed2b5}
     ::selection{background:var(--gold);color:#111} :focus-visible{outline:2px solid var(--gold);outline-offset:4px}
     button,a,input{touch-action:manipulation} button{min-height:40px} .primary,.secondary{border-radius:11px;padding:12px 19px}.primary:hover{background:#ffd494}
+    #cloud-state{overflow-wrap:anywhere;user-select:all}#cloud-modal .auth-card{max-height:90vh;overflow:auto}#cloud-link-steps{margin-block:16px}#cloud-link-steps a{color:var(--gold);text-decoration:underline}
     .topbar{height:76px;padding-inline:32px;background:#101212;backdrop-filter:none}.brand{font-size:24px;letter-spacing:-1px}.brand-mark{width:40px;height:40px;background:var(--gold);color:#171919;border:0;border-radius:13px}
     .nav{gap:7px}.nav button{padding:11px 20px}.nav button.active{background:#252926;color:var(--gold)}.nav button.active:before{content:"";display:inline-block;width:5px;height:5px;background:var(--gold);border-radius:50%;margin-right:9px}
     .container{width:min(1240px,100%);padding:50px 38px 72px}.dash-hero{margin-bottom:28px}.dash-hero h1{font-size:clamp(34px,4vw,48px);font-weight:600;letter-spacing:-2px;line-height:1.16}.dash-hero p{max-width:650px;font-size:15px;margin-top:8px}
@@ -250,6 +251,7 @@
         <button data-nav="settings">Settings</button>
       </nav>
       <div class="nav-right">
+        <button type="button" class="quiet-btn" id="cloud-toggle">Cloud account</button>
         <div id="user-area"></div>
       </div>
     </header>
@@ -373,7 +375,7 @@
               <div style="display:flex;gap:5px"><input type="number" id="text-x" aria-label="Text horizontal position in pixels" value="540" style="width:50%;padding:5px;border:1px solid var(--line);border-radius:6px;background:rgba(255,255,255,.05);color:var(--text)"><input type="number" id="text-y" aria-label="Text vertical position in pixels" value="960" style="width:50%;padding:5px;border:1px solid var(--line);border-radius:6px;background:rgba(255,255,255,.05);color:var(--text)"></div>
               <div style="display:flex;gap:5px;margin-top:5px"><input type="number" id="text-size" aria-label="Text size in pixels" value="48" min="12" max="200" style="width:50%;padding:5px;border:1px solid var(--line);border-radius:6px;background:rgba(255,255,255,.05);color:var(--text)"><input type="color" id="text-color" aria-label="Text color" value="#ffffff" style="width:50%;padding:3px;border:1px solid var(--line);border-radius:6px;background:rgba(255,255,255,.05)"></div>
               <button class="primary" id="text-add" style="margin-top:6px;width:100%">Add text</button>
-              <div id="text-list" style="margin-top:6px"></div><p class="editor-hint">Positions use the exported frame’s pixel coordinates. Text is applied when you export.</p>
+              <div id="text-list" style="margin-top:6px"></div>            <p class="editor-hint">Positions use the exported frame’s pixel coordinates and are shown live on the preview. Text is applied when you export.</p>
             </div>
             <div id="prop-audio" class="prop-panel" style="display:none">
               <label for="volume-slider" class="prop-label">Volume<small id="vol-val">100%</small></label>
@@ -393,7 +395,7 @@
             </div>
           </div>
         </aside>
-        <main class="editor-preview"><video id="editor-video" controls preload="metadata"></video></main>
+        <main class="editor-preview"><div style="position:relative;width:100%;display:flex;justify-content:center"><video id="editor-video" controls preload="metadata"></video><canvas id="overlay-canvas" style="position:absolute;top:0;left:50%;transform:translateX(-50%);height:100%;max-width:100%;pointer-events:none"></canvas></div></main>
         <aside class="editor-info">
           <div class="tool-label">In this clip</div>
           <div class="caption-sample" id="caption-sample">No caption words available.</div>
@@ -435,6 +437,22 @@
       <div style="text-align:center;margin-top:6px"><button class="quiet-btn" id="auth-skip" style="font-size:11px;color:var(--quiet)">Continue without account</button></div>
     </div>
   </div>
+  <div class="auth-modal" id="cloud-modal" role="dialog" aria-modal="true" aria-labelledby="cloud-title">
+    <div class="auth-card">
+      <h2 id="cloud-title">Cloud account</h2>
+      <p>Link your website account to view its access. Local projects and processing stay on this device.</p>
+      <p id="cloud-status" role="status">Checking cloud account…</p>
+      <button type="button" class="secondary" id="cloud-start">Connect cloud account</button>
+      <div id="cloud-link-steps" hidden>
+        <p>Open <a id="cloud-website" target="_blank" rel="noopener noreferrer">your account page</a>, enter this state there, then paste the one-time code below.</p>
+        <p><strong>State:</strong> <code id="cloud-state"></code></p>
+        <label><span>One-time code</span><input id="cloud-code" type="text" autocomplete="off" aria-label="One-time code from website"></label>
+        <button type="button" class="primary" id="cloud-complete">Finish linking</button>
+      </div>
+      <button type="button" class="secondary" id="cloud-signout" hidden>Disconnect cloud account</button>
+      <button type="button" class="quiet-btn" id="cloud-close">Close</button>
+    </div>
+  </div>
   <div class="paywall" id="paywall">
     <span class="eyebrow gold">✦ Out of credits</span>
     <h1>You're out of credits.</h1>
@@ -472,12 +490,18 @@
     function hidePaywall(){$('#paywall').classList.remove('show');showView('dashboard');}
 
 
+    // Per-launch capability token (task 03): injected by the server into the
+    // /app page. Sent on state-changing requests; never logged, never in URLs.
+    const CAPABILITY=document.querySelector('meta[name="clpz-capability"]')?.content||'';
     async function api(p,o={}){
       // If running against a local/desktop backend, use it directly
-      const r=await fetch(p,o);
+      const method=(o.method||'GET').toUpperCase();
+      const headers=Object.assign({},o.headers||{});
+      if(CAPABILITY&&method!=='GET'&&method!=='HEAD')headers['X-CLPZ-Capability']=CAPABILITY;
+      const r=await fetch(p,Object.assign({},o,{headers}));
       const ct=r.headers.get('content-type')||'';
       const d=ct.includes('application/json')?await r.json():null;
-      if(!r.ok)throw new Error(d?.detail||d?.message||`Request failed (${r.status})`);
+      if(!r.ok){const err=new Error(d?.detail||d?.message||`Request failed (${r.status})`);err.status=r.status;throw err;}
       return d;
     }
     async function apiWithAuth(p,o){return api(p,o||{});}
@@ -512,6 +536,29 @@
       try{await api('/api/auth/logout',{method:'POST'});}catch(e){}
       state.user=null;renderUserBadge();toast('Logged out.');
     }
+    async function refreshCloudAccount(){
+      try{const data=await api('/api/cloud/account');
+        $('#cloud-status').textContent=`Connected. Cloud credits: ${data.credits}. Subscription: ${data.subscription?.status||'none'}. Entitlements: ${(data.entitlements||[]).map(e=>e.feature).join(', ')||'none'}.`;
+        $('#cloud-signout').hidden=false;
+      }catch(_){$('#cloud-status').textContent='No active cloud account, or the cloud service is unavailable.';$('#cloud-signout').hidden=true;}
+    }
+    $('#cloud-toggle').addEventListener('click',()=>{$('#cloud-modal').classList.add('show');refreshCloudAccount();});
+    $('#cloud-close').addEventListener('click',()=>$('#cloud-modal').classList.remove('show'));
+    $('#cloud-start').addEventListener('click',async()=>{
+      try{const data=await api('/api/cloud/link/start',{method:'POST'});
+        $('#cloud-state').textContent=data.state;$('#cloud-website').href=data.website_url;
+        $('#cloud-link-steps').hidden=false;$('#cloud-status').textContent='Enter the state on the website, then paste its code here.';
+      }catch(error){$('#cloud-status').textContent=error.message;}
+    });
+    $('#cloud-complete').addEventListener('click',async()=>{
+      try{await api('/api/cloud/link/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:$('#cloud-code').value.trim()})});
+        $('#cloud-code').value='';$('#cloud-link-steps').hidden=true;await refreshCloudAccount();
+      }catch(error){$('#cloud-status').textContent=error.message;}
+    });
+    $('#cloud-signout').addEventListener('click',async()=>{
+      try{await api('/api/cloud/signout',{method:'POST'});$('#cloud-status').textContent='Cloud account disconnected.';$('#cloud-signout').hidden=true;}
+      catch(error){$('#cloud-status').textContent=error.message;}
+    });
 
     // ── Timer ──
     function stopTimer(){clearInterval(state.timerTick);state.timerTick=null;}
@@ -529,11 +576,12 @@
       if(state.user){$('#dash-greeting').textContent=`Welcome back, ${state.user.display_name||state.user.email.split('@')[0]}.`;}
       // Credits
       try{const c=await api('/api/credits/balance');$('#stat-credits').textContent=c.balance;$('#stat-cost').textContent=c.cost_per_forge;if(state.user)state.user.credits=c.balance;}catch(_){}
-      // Projects & clips
-      try{const jobs=await api('/api/jobs');state.projects=jobs;const done=jobs.filter(j=>j.stage==='done');const clipCount=done.reduce((n,j)=>n+(j.clips||[]).filter(c=>c.status==='done').length,0);$('#stat-projects').textContent=done.length;$('#stat-clips').textContent=clipCount;
+      // Projects & clips (task 19: paginated lightweight summaries)
+      try{const resp=await api('/api/jobs?page=1&per_page=100');const jobs=resp.projects||resp;state.projects=jobs.map(s=>({...s,_summary:true}));const done=jobs.filter(j=>j.stage==='done');const clipCount=done.reduce((n,j)=>n+(j.clip_count||0),0);$('#stat-projects').textContent=done.length;$('#stat-clips').textContent=clipCount;
         // Recent projects (last 3)
+        // Recent projects (last 3) — summaries carry clip_count, no clip arrays
         const recent=jobs.slice(0,3);const pg=$('#dash-projects');
-        if(recent.length){pg.innerHTML=recent.map(j=>{const count=(j.clips||[]).filter(c=>c.status==='done').length;const title=j.video?.title||(j.input_type==='upload'?'Uploaded video':'YouTube video');return`<button class="project" type="button" data-project="${esc(j.id)}"><div class="project-visual">${(j.clips||[]).find(c=>c.thumbnail_url)?`<img alt="" loading="lazy" src="${esc(j.clips.find(c=>c.thumbnail_url).thumbnail_url)}">`:''}<span>✂</span><small>${count} clip${count===1?'':'s'}</small></div><div class="project-body"><div><strong>${esc(title)}</strong><small>${esc(formatDate(j.created_at))}</small></div><span>›</span></div></button>`;}).join('');$$('[data-project]',pg).forEach(b=>b.addEventListener('click',()=>{const j=state.projects.find(p=>p.id===b.dataset.project);if(j){renderClips(j);showView('clips');}}));$('#dash-projects-empty').style.display='none';pg.style.display='';}else{$('#dash-projects-empty').style.display='';pg.style.display='none';}
+        if(recent.length){pg.innerHTML=recent.map(j=>{const count=j.clip_count??0;const title=j.title||(j.input_type==='upload'?'Uploaded video':'YouTube video');return`<button class="project" type="button" data-project="${esc(j.id)}"><div class="project-visual"><span>✂</span><small>${count} clip${count===1?'':'s'}</small></div><div class="project-body"><div><strong>${esc(title)}</strong><small>${esc(formatDate(j.created_at))}</small></div><span>›</span></div></button>`;}).join('');$$('[data-project]',pg).forEach(b=>b.addEventListener('click',async()=>{const s=state.projects.find(p=>p.id===b.dataset.project);if(s){try{const full=await api(`/api/jobs/${s.id}`);const j=_job_payload_shim(full);state.projects=state.projects.map(x=>x.id===s.id?{...x,...j,_summary:false}:x);renderClips(j);showView('clips');}catch(e){toast('Could not open project.');}}}));$('#dash-projects-empty').style.display='none';pg.style.display='';}else{$('#dash-projects-empty').style.display='';pg.style.display='none';}
         // Recent clips (last 4)
         const allClips=done.flatMap(j=>(j.clips||[]).filter(c=>c.status==='done').map(c=>({...c,_job:j}))).slice(0,4);
         const cg=$('#dash-clips');
@@ -551,10 +599,12 @@
 
     // ── Forge ──
     function newIdemKey(){return (crypto.randomUUID?crypto.randomUUID():('idem-'+Date.now()+'-'+Math.random().toString(36).slice(2)));}
-    async function forgeUrl(){const url=$('#url').value.trim();clearError();if(!url)return showError('Paste a YouTube URL or choose a local video.');try{$('#forge-url').disabled=true;state.forgeKey=newIdemKey();const r=await api('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,max_clips:5,idempotency_key:state.forgeKey})});if(r.credits_remaining!=null&&state.user){state.user.credits=r.credits_remaining;renderUserBadge();}beginPolling(r.job_id);}catch(e){if(e.message.includes('Not enough credits'))showPaywall();showError(e.message);}finally{$('#forge-url').disabled=false;}}
-    async function forgeFile(){if(!state.file)return;clearError();try{$('#forge-file').disabled=true;$('#forge-file').textContent='Uploading…';state.job={id:null,stage:'queued',progress:0};$('#process-title').textContent='Uploading local video';$('#process-id').textContent='Sending source directly to CLPZ';showView('processing');const b=new FormData();b.append('file',state.file);b.append('max_clips','5');b.append('idempotency_key',state.forgeKey=newIdemKey());const r=await api('/api/jobs/upload',{method:'POST',body:b});if(r.credits_remaining!=null&&state.user){state.user.credits=r.credits_remaining;renderUserBadge();}beginPolling(r.job_id);}catch(e){showView('dashboard');if(e.message.includes('Not enough credits'))showPaywall();showError(e.message);}finally{$('#forge-file').disabled=false;$('#forge-file').textContent='Create clips';}}
-    function setFile(f){if(!f)return;state.file=f;$('#file-name').textContent=f.name;$('#file-size').textContent=`${fileSize(f.size)} · video ready`;$('#selected-file').classList.add('show');$('#upload-box').style.display='none';clearError();}
-    function clearFile(){state.file=null;$('#file').value='';$('#selected-file').classList.remove('show');$('#upload-box').style.display='block';}
+    async function forgeUrl(){const url=$('#url').value.trim();clearError();if(!url)return showError('Paste a YouTube URL or choose a local video.');try{$('#forge-url').disabled=true;// Task 09: keep ONE stable key per logical submission (across retries of
+      // the SAME request) until it resolves; a resolved request clears it.
+      if(!state.forgeKey)state.forgeKey=newIdemKey();const r=await api('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,max_clips:5,idempotency_key:state.forgeKey})});if(r.credits_remaining!=null&&state.user){state.user.credits=r.credits_remaining;renderUserBadge();}beginPolling(r.job_id);}catch(e){if(e.status===409||e.message.includes('already used'))state.forgeKey=null;if(e.message.includes('Not enough credits'))showPaywall();showError(e.message);}finally{$('#forge-url').disabled=false;}}
+    async function forgeFile(){if(!state.file)return;clearError();try{$('#forge-file').disabled=true;$('#forge-file').textContent='Uploading…';state.job={id:null,stage:'queued',progress:0};$('#process-title').textContent='Uploading local video';$('#process-id').textContent='Sending source directly to CLPZ';showView('processing');const b=new FormData();b.append('file',state.file);b.append('max_clips','5');b.append('idempotency_key',state.forgeKey||(state.forgeKey=newIdemKey()));const r=await api('/api/jobs/upload',{method:'POST',body:b});if(r.credits_remaining!=null&&state.user){state.user.credits=r.credits_remaining;renderUserBadge();}beginPolling(r.job_id);}catch(e){showView('dashboard');if(e.status===409||e.message.includes('already used'))state.forgeKey=null;if(e.message.includes('Not enough credits'))showPaywall();showError(e.message);}finally{$('#forge-file').disabled=false;$('#forge-file').textContent='Create clips';}}
+    function setFile(f){if(!f)return;state.file=f;state.forgeKey=null;$('#file-name').textContent=f.name;$('#file-size').textContent=`${fileSize(f.size)} · video ready`;$('#selected-file').classList.add('show');$('#upload-box').style.display='none';clearError();}    // Task 09: a NEW file is a NEW logical submission → reset the key.
+    function clearFile(){state.file=null;state.forgeKey=null;$('#file').value='';$('#selected-file').classList.remove('show');$('#upload-box').style.display='block';}
 
     // ── Clips ──
     function renderClips(j){state.job=j;state.jobId=j.id;const clips=(j.clips||[]).filter(c=>c.status==='done');$('#clips-subtitle').textContent=clips.length?`${clips.length} clip${clips.length===1?'':'s'} ready. Preview, edit, or download your favorites.`:'No playable output was generated.';$('#clips-empty').style.display=clips.length?'none':'flex';$('#clip-grid').innerHTML=clips.map((c,i)=>{const d=durationOf(c);const t=c.thumbnail_url?`<img src="${esc(c.thumbnail_url)}" alt="Thumbnail" loading="lazy">`:'';return`<article class="clip-card" style="animation:appear .3s ${i*45}ms both"><button class="clip-media" type="button" data-preview="${c.index}">${t}<span class="clip-overlay"></span><span class="pill gold score">Ready</span><span class="media-meta"><span>9:16</span><span>${d===null?'—':formatTime(d)}</span></span></button><div class="clip-info"><div class="clip-title">${esc(c.title||`Clip ${c.index+1}`)}</div><div class="clip-time">${formatTime(c.start)} — ${formatTime(c.end)}</div><div class="clip-actions"><button class="edit" type="button" data-edit="${c.index}">Edit</button><a class="download" href="${esc(c.download_url)}">↓ Download</a></div></div></article>`;}).join('');$$('[data-preview]', $('#clip-grid')).forEach(b=>b.addEventListener('click',()=>openModal(Number(b.dataset.preview))));$$('[data-edit]', $('#clip-grid')).forEach(b=>b.addEventListener('click',()=>openEditor(Number(b.dataset.edit))));}
@@ -571,21 +621,23 @@
     function redoEdit(){if(!state.editFuture.length)return;state.editHistory.push(JSON.parse(JSON.stringify(state.editState)));state.editState=state.editFuture.pop();restoreEditorUI();updateUndoRedo();}
     function updateUndoRedo(){$('#editor-undo').disabled=!state.editHistory.length;$('#editor-redo').disabled=!state.editFuture.length;}
     function restoreEditorUI(){const s=state.editState;$('#trim-start').value=s.trim_start||0;$('#trim-start-val').textContent=`${(s.trim_start||0).toFixed(1)}s`;if(s.trim_end!=null){$('#trim-end').value=s.trim_end;$('#trim-end-val').textContent=`${s.trim_end.toFixed(1)}s`;}$('#volume-slider').value=s.muted?0:Math.round(s.volume*100);$('#vol-val').textContent=s.muted?'Muted':`${Math.round(s.volume*100)}%`;$('#speed-slider').value=Math.round(s.speed*100);$('#speed-val').textContent=`${s.speed}x`;renderTextOverlays();}
-    function renderTextOverlays(){$('#text-list').innerHTML=state.editState.text_overlays.map((t,i)=>`<div style="display:flex;align-items:center;gap:5px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;margin-bottom:3px;font-size:12px"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.text)}</span><button class="quiet-btn" onclick="removeTextOverlay(${i})" style="font-size:10px;padding:2px 5px">x</button></div>`).join('')||'<div style="color:var(--quiet);font-size:11px">No text overlays</div>';}
+    function renderTextOverlays(){$('#text-list').innerHTML=state.editState.text_overlays.map((t,i)=>`<div style="display:flex;align-items:center;gap:5px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;margin-bottom:3px;font-size:12px"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.text)}</span><button class="quiet-btn" onclick="removeTextOverlay(${i})" style="font-size:10px;padding:2px 5px">x</button></div>`).join('')||'<div style="color:var(--quiet);font-size:11px">No text overlays</div>';drawOverlays();}
     window.removeTextOverlay=function(i){pushEditHistory();state.editState.text_overlays.splice(i,1);renderTextOverlays();};
     function openEditor(i){const c=findClip(i);if(!c)return;state.editorClip=c;resetEditorState();const d=durationOf(c)||(c.end-c.start);if(d>0){state.editState.trim_end=Math.round(d*10)/10;$('#trim-end').max=Math.ceil(d);$('#trim-end').value=state.editState.trim_end;}loadEditorDraft();$('#topbar').style.display='none';$$('.view').forEach(v=>v.classList.remove('active'));$('#editor').classList.add('show');$('#editor-title').textContent=c.title||`Clip ${c.index+1}`;$('#editor-video').src=c.stream_url;$('#editor-video').poster=c.thumbnail_url||'';const w=(c.caption_words||[]).slice(0,18).map(x=>x.word).join(' ');$('#caption-sample').textContent=w||'Caption details will appear after a newly rendered clip is opened.';const dur=durationOf(c);$('#caption-facts').innerHTML=`<div>Caption source<b>${c.ass_file?'Word-timed ASS render':'Unavailable on this legacy clip'}</b></div><div>Render duration<b>${dur===null?'-':formatTime(dur)}</b></div><div>Crop plan<b>${esc(c.layout||c.render_plan?.mode||'-')}</b></div>`;restoreEditorUI();updateUndoRedo();window.scrollTo({top:0});}
     function closeEditor(){saveEditorDraft();$('#editor-video').pause();$('#editor-video').removeAttribute('src');$('#editor-video').load();$('#editor').classList.remove('show');$('#topbar').style.display='';showView('clips');if(state.job)renderClips(state.job);}
     async function exportEdit(){const c=state.editorClip;if(!c||!state.jobId)return;const b=$('#editor-export'),o=b.textContent;try{b.disabled=true;b.textContent='Exporting...';const r=await api(`/api/jobs/${state.jobId}/clips/${c.index}/edit`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state.editState)});toast(`Edited clip saved to ${r.folder}`);}catch(e){toast(e.message);}finally{b.disabled=false;b.textContent=o;}}
 
     // ── Projects ──
-    async function loadProjects(){try{const p=await api('/api/jobs');state.projects=p;const c=$('#project-grid');c.innerHTML=p.map(j=>{const n=(j.clips||[]).filter(x=>x.status==='done').length;const t=j.video?.title||(j.input_type==='upload'?'Uploaded video':'YouTube video');return`<button class="project" type="button" data-project="${esc(j.id)}"><div class="project-visual">${(j.clips||[]).find(c=>c.thumbnail_url)?`<img alt="" loading="lazy" src="${esc(j.clips.find(c=>c.thumbnail_url).thumbnail_url)}">`:''}<span>✂</span><small>${n} clip${n===1?'':'s'}</small></div><div class="project-body"><div><strong>${esc(t)}</strong><small>${esc(formatDate(j.created_at))}</small></div><span>›</span></div></button>`;}).join('');$('#projects-empty').style.display=p.length?'none':'flex';$$('[data-project]',c).forEach(b=>b.addEventListener('click',()=>{const j=state.projects.find(x=>x.id===b.dataset.project);if(j){renderClips(j);showView('clips');}}));}catch(e){console.warn(e);toast('Could not load saved projects.');}}
+    // Task 19: convert a detail payload into the clip-bearing shape the UI expects.
+    function _job_payload_shim(full){const j=full&&typeof full==='object'?full:{};j.clips=j.clips||[];for(const c of j.clips){const base=`/api/jobs/${j.id}/clips/${c.index}`;c.stream_url=c.stream_url||`${base}/stream`;c.download_url=c.download_url||base;if(c.thumbnail!==undefined||c.thumbnail_url)c.thumbnail_url=c.thumbnail_url;}return j;}
+    async function loadProjects(){try{const resp=await api('/api/jobs?page=1&per_page=100');const p=resp.projects||resp;state.projects=p.map(s=>({...s,_summary:true}));const c=$('#project-grid');c.innerHTML=p.map(j=>{const n=j.clip_count??0;const t=j.title||(j.input_type==='upload'?'Uploaded video':'YouTube video');return`<div class="project" style="display:flex;align-items:stretch"><button class="project" type="button" data-project="${esc(j.id)}" style="flex:1"><div class="project-visual"><span>✂</span><small>${n} clip${n===1?'':'s'}</small></div><div class="project-body"><div><strong>${esc(t)}</strong><small>${esc(formatDate(j.created_at))}</small></div><span>›</span></div></button><button class="quiet-btn" type="button" data-del="${esc(j.id)}" title="Delete project (working files only)" aria-label="Delete project" style="padding:0 10px">🗑</button></div>`;}).join('');$('#projects-empty').style.display=p.length?'none':'flex';$$('[data-project]',c).forEach(b=>b.addEventListener('click',async()=>{const s=state.projects.find(x=>x.id===b.dataset.project);if(s){try{const full=await api(`/api/jobs/${s.id}`);const j=_job_payload_shim(full);state.projects=state.projects.map(x=>x.id===s.id?{...x,...j,_summary:false}:x);renderClips(j);showView('clips');}catch(e){toast('Could not open project.');}}}));$$('[data-del]',c).forEach(b=>b.addEventListener('click',async()=>{const id=b.dataset.del;if(!confirm('Delete this project? Working files are removed; clips you exported to your Videos folder and external sources are NOT deleted.'))return;try{await api(`/api/jobs/${id}`,{method:'DELETE'});toast('Project deleted.');await loadProjects();}catch(e){toast(e.message||'Delete failed.');}}));}catch(e){console.warn(e);toast('Could not load saved projects.');}}
 
     // ── Settings ──
     async function loadDiagnostics(){const c=$('#diagnostics');c.innerHTML='<div class="setting"><small>Diagnostics</small><strong>Loading…</strong></div>';try{const d=await api('/api/diagnostics');const f=[['FFmpeg',d.ffmpeg],['ffprobe',d.ffprobe],['yt-dlp',d['yt-dlp']],['Whisper',d.whisper],['RAM',d.ram_total_gb?`${d.ram_available_gb}/${d.ram_total_gb} GB (${d.ram_percent}%)`:d.ram],['Disk free',d.disk_free_gb?`${d.disk_free_gb} GB`:d.disk],['CPU cores',d.cpu_count],['Editor',d.editor]];c.innerHTML=f.map(([l,v])=>`<div class="setting ${(v==='found'||v==='available'||String(v).startsWith('v'))?'good':v==='missing'?'bad':''}"><small>${esc(l)}</small><strong>${esc(v??'Unavailable')}</strong></div>`).join('');}catch(e){c.innerHTML=`<div class="setting bad"><small>Diagnostics</small><strong>${esc(e.message)}</strong></div>`;}}
 
     // ── Event listeners ──
     $$('[data-nav]').forEach(el=>el.addEventListener('click',e=>{e.preventDefault();showView(el.dataset.nav);}));
-    $('#forge-url').addEventListener('click',forgeUrl);$('#url').addEventListener('keydown',e=>{if(e.key==='Enter')forgeUrl();});
+    $('#forge-url').addEventListener('click',forgeUrl);$('#url').addEventListener('keydown',e=>{if(e.key==='Enter')forgeUrl();if(e.key!=='Enter')state.forgeKey=null;});
     $('#file').addEventListener('change',e=>setFile(e.target.files[0]));$('#upload-box').addEventListener('click',()=>$('#file').click());$('#change-file').addEventListener('click',()=>$('#file').click());$('#remove-file').addEventListener('click',clearFile);$('#forge-file').addEventListener('click',forgeFile);
     ['dragenter','dragover'].forEach(t=>$('#upload-box').addEventListener(t,e=>{e.preventDefault();$('#upload-box').classList.add('drag');}));['dragleave','drop'].forEach(t=>$('#upload-box').addEventListener(t,e=>{e.preventDefault();$('#upload-box').classList.remove('drag');}));$('#upload-box').addEventListener('drop',e=>setFile(e.dataTransfer.files[0]));
     $('#cancel-job').addEventListener('click',async()=>{if(state.jobId){try{await api(`/api/jobs/${state.jobId}/cancel`,{method:'POST'});}catch(e){toast(e.message);}}showView('dashboard');});
@@ -623,7 +675,28 @@
     function draftKey(){return state.jobId&&state.editorClip?'clpz.edit.v1.'+state.jobId+'.'+state.editorClip.index:null;}
     function saveEditorDraft(){const key=draftKey();if(!key||!state.editState)return;try{localStorage.setItem(key,JSON.stringify(state.editState));$('#editor-saved').textContent='Draft saved on this device';}catch(_){$('#editor-saved').textContent='Could not save draft — keep this editor open';}}
     function loadEditorDraft(){const key=draftKey();try{const saved=JSON.parse(localStorage.getItem(key)||'null');if(saved&&Number.isFinite(saved.trim_start)&&Array.isArray(saved.text_overlays)){const duration=state.editState.trim_end;state.editState={...state.editState,...saved,trim_start:Math.max(0,Math.min(saved.trim_start,duration-.1)),trim_end:Math.max(.1,Math.min(saved.trim_end||duration,duration)),speed:Math.min(4,Math.max(.25,Number(saved.speed)||1)),volume:Math.min(2,Math.max(0,Number(saved.volume)||0))};if(state.editState.trim_end<=state.editState.trim_start)state.editState.trim_end=duration;}}catch(_){}}
-    function syncPreview(){if(!state.editState)return;const v=$('#editor-video'),s=state.editState;v.muted=!!s.muted;v.volume=Math.min(1,Math.max(0,s.volume));v.playbackRate=s.speed;$('#mute-btn').textContent=s.muted?'Unmute':'Mute';$('#mute-btn').setAttribute('aria-pressed',String(!!s.muted));if(v.readyState&&v.currentTime<s.trim_start)v.currentTime=s.trim_start;}
+    function syncPreview(){if(!state.editState)return;const v=$('#editor-video'),s=state.editState;v.muted=!!s.muted;v.volume=Math.min(1,Math.max(0,s.volume));v.playbackRate=s.speed;$('#mute-btn').textContent=s.muted?'Unmute':'Mute';$('#mute-btn').setAttribute('aria-pressed',String(!!s.muted));if(v.readyState&&v.currentTime<s.trim_start)v.currentTime=s.trim_start;drawOverlays();}
+
+    // ── Overlay preview compositing (F23): text overlays are drawn over the
+    // preview at their EXPORT coordinates mapped into the on-screen video box,
+    // so what you see matches what the export renders. Export coordinates use
+    // the 1080x1920 output frame (config.OUT_WIDTH/OUT_HEIGHT); the canvas is
+    // sized to the displayed video box and scaled accordingly.
+    const OUT_W=1080, OUT_H=1920;
+    function drawOverlays(){const canvas=$('#overlay-canvas'),v=$('#editor-video');if(!canvas||!v||!state.editState)return;const box=v.getBoundingClientRect();if(box.width<2){requestAnimationFrame(drawOverlays);return;}
+      // Letterbox-aware mapping: the video content is centered in the box.
+      const vw=v.videoWidth||OUT_W, vh=v.videoHeight||OUT_H;
+      const scale=Math.min(box.width/vw, box.height/vh);
+      const contentW=vw*scale, contentH=vh*scale;
+      const offX=(box.width-contentW)/2, offY=(box.height-contentH)/2;
+      const dpr=window.devicePixelRatio||1;
+      canvas.width=Math.round(box.width*dpr);canvas.height=Math.round(box.height*dpr);
+      canvas.style.width=box.width+'px';canvas.style.height=box.height+'px';
+      const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,box.width,box.height);
+      const exportToScreen=(x,y)=>({sx:offX+(x/OUT_W)*contentW, sy:offY+(y/OUT_H)*contentH});
+      for(const t of state.editState.text_overlays){const{sx,sy}=exportToScreen(t.x,t.y);const fontSize=(t.size/OUT_H)*contentH;ctx.font=`600 ${fontSize}px system-ui,sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.shadowColor='rgba(0,0,0,.55)';ctx.shadowBlur=fontSize/6;ctx.fillStyle=t.color||'#ffffff';const lines=String(t.text).split('\n');lines.forEach((line,li)=>{ctx.fillText(line,sx,sy+li*fontSize*1.15);});}
+    }
+    window.addEventListener('resize',()=>{if($('#editor').classList.contains('show'))drawOverlays();});
     let draftTimer;
     function scheduleDraft(){clearTimeout(draftTimer);syncPreview();draftTimer=setTimeout(saveEditorDraft,250);}
     $('#editor').addEventListener('change',scheduleDraft);

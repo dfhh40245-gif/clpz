@@ -65,4 +65,5 @@ body{transition:background-color .35s ease,color .35s ease}
 @media(max-width:680px){.auth-card{margin-top:2vh;padding:28px 22px}.auth-card h1{font-size:32px}.auth-tabs{margin-block:18px 16px}.auth-form{gap:12px}}
 
 .app-downloads{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:28px}.app-downloads a{min-height:44px;padding:0 18px;border:1px solid var(--line);border-radius:9px;display:inline-flex;align-items:center;font-size:12px;font-weight:700}.app-downloads a:hover{border-color:var(--gold);color:var(--gold)}
+.device-link-code code{overflow-wrap:anywhere;user-select:all}.account-panel .auth-form{margin-top:16px;max-width:520px;min-width:min(100%,300px)}
 .availability a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}.availability a:hover{color:var(--gold)}

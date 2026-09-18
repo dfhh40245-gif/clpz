@@ -127,8 +127,15 @@ const API = '';
 let currentUserId = '';
 let currentAction = '';
 
+// Per-launch capability token (task 03): injected by the server into the page.
+const CAPABILITY = document.querySelector('meta[name="clpz-capability"]')?.content || '';
+
 async function api(path, opts) {
-  const r = await fetch(API + path, opts);
+  opts = opts || {};
+  const method = (opts.method || 'GET').toUpperCase();
+  const headers = Object.assign({}, opts.headers || {});
+  if (CAPABILITY && method !== 'GET' && method !== 'HEAD') headers['X-CLPZ-Capability'] = CAPABILITY;
+  const r = await fetch(API + path, Object.assign({}, opts, { headers }));
   if (r.status === 401) { window.location.href = '/auth.html?mode=login'; return null; }
   if (r.status === 403) { document.getElementById('usersTable').innerHTML = '<div class="empty">Admin access required. Set CLPZ_ADMIN_EMAIL env var.</div>'; return null; }
   return r.json();

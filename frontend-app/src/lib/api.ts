@@ -1,7 +1,20 @@
 const BASE = '';
 
+// Per-launch capability token (task 03): injected by the server into served
+// pages via <meta name="clpz-capability">. Read at startup; sent on
+// state-changing requests. Never logged and never placed in URLs.
+const CAPABILITY =
+  typeof document !== 'undefined'
+    ? document.querySelector('meta[name="clpz-capability"]')?.content || ''
+    : '';
+
 export async function api<T = unknown>(path: string, opts: RequestInit = {}): Promise<T> {
-  const r = await fetch(BASE + path, opts);
+  const method = (opts.method || 'GET').toUpperCase();
+  const headers: Record<string, string> = Object.assign({}, opts.headers as Record<string, string>);
+  if (CAPABILITY && method !== 'GET' && method !== 'HEAD') {
+    headers['X-CLPZ-Capability'] = CAPABILITY;
+  }
+  const r = await fetch(BASE + path, Object.assign({}, opts, { headers }));
   const ct = r.headers.get('content-type') || '';
   const d = ct.includes('application/json') ? await r.json() : null;
   if (!r.ok) throw new Error(d?.detail || d?.message || `Request failed (${r.status})`);

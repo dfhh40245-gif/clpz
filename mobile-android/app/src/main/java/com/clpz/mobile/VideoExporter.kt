@@ -10,15 +10,26 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.transformer.*
 import java.io.File
 
+/**
+ * Cancellation contract (task 20): [cancel] must (1) stop any in-flight export
+ * work, (2) delete the partial output file, and (3) guarantee the completion
+ * callback never fires — and never fires with success. [isBusy] mirrors that:
+ * it stays true from start() until cancel or a terminal callback.
+ */
 @OptIn(UnstableApi::class)
 class VideoExporter(private val context: Context) {
     private var transformer: Transformer? = null
     private var output: File? = null
     private val handler = Handler(Looper.getMainLooper())
     private var report: Runnable? = null
+    private var cancelled = false
+
+    val isBusy: Boolean get() = transformer != null
 
     fun export(project: ClipProject, onProgress: (Int?) -> Unit, onDone: (Result<File>) -> Unit) {
+        check(!isBusy) { "An export is already running." }
         require(project.endMs > project.startMs) { "Select a non-empty clip." }
+        cancelled = false
         val directory = File(context.filesDir, "exports").apply { mkdirs() }
         val file = File(directory, "CLPZ-${System.currentTimeMillis()}.mp4")
         output = file
@@ -30,10 +41,12 @@ class VideoExporter(private val context: Context) {
         val task = Transformer.Builder(context).setVideoMimeType(MimeTypes.VIDEO_H264)
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, result: ExportResult) {
+                    if (cancelled) return
                     stopPolling(); transformer = null
                     onDone(Result.success(file))
                 }
                 override fun onError(composition: Composition, result: ExportResult, exception: ExportException) {
+                    if (cancelled) return
                     stopPolling(); transformer = null; file.delete()
                     onDone(Result.failure(exception))
                 }
@@ -53,8 +66,11 @@ class VideoExporter(private val context: Context) {
 
     fun cancel() {
         stopPolling()
-        if (transformer != null) { transformer?.cancel(); output?.delete() }
+        cancelled = true
+        transformer?.cancel()
         transformer = null
+        output?.delete()
     }
+
     private fun stopPolling() { report?.let { handler.removeCallbacks(it) }; report = null }
 }

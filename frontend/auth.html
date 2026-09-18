@@ -202,9 +202,15 @@
   function showSuccess(msg) { errorBox.classList.remove('show'); successBox.textContent = msg; successBox.classList.add('show'); }
   function hideMessages() { errorBox.classList.remove('show'); successBox.classList.remove('show'); }
 
+  // Per-launch capability token (task 03): injected by the server into the page.
+  var CAPABILITY = (document.querySelector('meta[name="clpz-capability"]') || {}).content || '';
+
   async function api(path, opts) {
     opts = opts || {};
-    var r = await fetch(path, opts);
+    var method = (opts.method || 'GET').toUpperCase();
+    var headers = Object.assign({}, opts.headers || {});
+    if (CAPABILITY && method !== 'GET' && method !== 'HEAD') headers['X-CLPZ-Capability'] = CAPABILITY;
+    var r = await fetch(path, Object.assign({}, opts, { headers: headers }));
     var ct = r.headers.get('content-type') || '';
     var d = ct.includes('application/json') ? await r.json() : null;
     if (!r.ok) throw new Error((d && (d.detail || d.message)) || 'Request failed (' + r.status + ')');

@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.automirrored.rounded.Redo
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -290,6 +291,8 @@ fun EditorScreen(initial: ClipProject, onSave: (ClipProject) -> Unit, onBack: ()
         confirmButton = { TextButton({ change(project.copy(name = title.trim())); rename = false }, enabled = title.isNotBlank()) { Text("Save name") } },
         dismissButton = { TextButton({ rename = false }) { Text("Cancel") } })
     if (exporting) AlertDialog(onDismissRequest = {}, title = { Text("Making the final cut.") },
+        // Cancellation is user-initiated here; dismissing via back/outside is blocked on purpose.
+        properties = DialogProperties(usePlatformDefaultWidth = true),
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
                 Text("Keep CLPZ open while your video exports. Your draft is already saved.", color = Muted)
@@ -297,7 +300,8 @@ fun EditorScreen(initial: ClipProject, onSave: (ClipProject) -> Unit, onBack: ()
                 else LinearProgressIndicator(progress = { progress!! / 100f }, modifier = Modifier.fillMaxWidth())
                 Text(progress?.let { "$it% rendered" } ?: "Preparing the video…", color = Amber)
             }
-        }, confirmButton = { TextButton({ exporter.cancel(); exporting = false; view.keepScreenOn = false }) { Text("Cancel export") } })
+        }, confirmButton = { TextButton({ exporter.cancel(); exporting = false; view.keepScreenOn = false
+            scope.launch { snackbar.showSnackbar("Export canceled. Nothing was saved from this attempt.") } }) { Text("Cancel export") } })
     exported?.let { file ->
         AlertDialog(onDismissRequest = { exported = null }, icon = { Icon(Icons.Rounded.CheckCircle, null, tint = Mint, modifier = Modifier.size(44.dp)) },
             title = { Text("Ready for the world.") }, text = {

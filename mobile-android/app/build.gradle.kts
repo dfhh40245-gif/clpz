@@ -25,11 +25,36 @@ android {
         buildConfigField("String", "SUPABASE_ANON_KEY", quoted(System.getenv("SUPABASE_ANON_KEY")))
         buildConfigField("String", "WEBSITE_URL", quoted(System.getenv("WEBSITE_URL") ?: "https://clpzit.vercel.app"))
     }
+    signingConfigs {
+        // Release signing activates only when the CI keystore secret is present;
+        // local/CI debug builds are unaffected. The identity is preserved across
+        // upgrades by reusing the same keystore secret (never committed).
+        create("release") {
+            val ks = System.getenv("CI")?.let { File(rootDir, "release.keystore") }
+            if (ks != null && ks.exists()) {
+                storeFile = ks
+                storePassword = System.getenv("ANDROID_RELEASE_STORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_RELEASE_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        release {
+            val ks = System.getenv("CI")?.let { File(rootDir, "release.keystore") }
+            if (ks != null && ks.exists()) signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
     buildFeatures { compose = true; buildConfig = true }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("org.robolectric:robolectric:4.14.1")
     implementation(platform("androidx.compose:compose-bom:2025.05.01"))
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.compose.material3:material3")

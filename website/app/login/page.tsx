@@ -5,7 +5,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { SmokeyBackground } from "@/components/smokey-background";
 import { AuthForm } from "./auth-form";
 
-export default async function LoginPage() {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   let signedIn = false;
   try {
     const supabase = await createClient();
@@ -14,5 +14,6 @@ export default async function LoginPage() {
   } catch { /* The form explains missing configuration if clicked. */ }
   if (signedIn) redirect("/account");
 
-  return <main className="auth-page"><SmokeyBackground /><nav className="nav shell auth-nav"><Brand /><ThemeToggle /></nav><AuthForm /></main>;
+  const params = await searchParams;
+  return <main className="auth-page"><SmokeyBackground /><nav className="nav shell auth-nav"><Brand /><ThemeToggle /></nav><AuthForm authError={params.error === "oauth"} /></main>;
 }

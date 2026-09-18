@@ -7,9 +7,9 @@ import { createClient } from "@/lib/supabase/client";
 import { Brand } from "@/components/brand";
 import { GoogleButton } from "./google-button";
 
-type Mode = "login" | "signup";
+type Mode = "login" | "signup" | "recover";
 
-export function AuthForm() {
+export function AuthForm({ authError = false }: { authError?: boolean }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
@@ -17,7 +17,7 @@ export function AuthForm() {
   const [confirm, setConfirm] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(authError ? "That sign-in link expired or could not be verified. Please try again." : "");
   const [success, setSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -31,7 +31,13 @@ export function AuthForm() {
     setBusy(true);
     try {
       const supabase = createClient();
-      if (mode === "login") {
+      if (mode === "recover") {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/auth/callback?next=/login/reset-password`,
+        });
+        if (error) throw error;
+        setSuccess(true); setMessage("If this email has an account, a recovery link is on its way.");
+      } else if (mode === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         router.push("/account"); router.refresh();
@@ -48,17 +54,19 @@ export function AuthForm() {
 
   return <section className="auth-card">
     <Brand />
-    <h1>Welcome {mode === "login" ? "Back" : "to CLPZ"}</h1>
-    <p>{mode === "login" ? "Sign in to continue" : "Create your account to get started"}</p>
+    <h1>{mode === "recover" ? "Recover your account" : `Welcome ${mode === "login" ? "Back" : "to CLPZ"}`}</h1>
+    <p>{mode === "recover" ? "We’ll send a password reset link." : mode === "login" ? "Sign in to continue" : "Create your account to get started"}</p>
     <div className="auth-tabs" role="group" aria-label="Account action"><button type="button" aria-pressed={mode === "login"} disabled={busy} className={mode === "login" ? "active" : ""} onClick={() => switchMode("login")}>Sign in</button><button type="button" aria-pressed={mode === "signup"} disabled={busy} className={mode === "signup" ? "active" : ""} onClick={() => switchMode("signup")}>Create account</button></div>
     {message && <p className={success ? "auth-message" : "auth-error"} role="status">{message}</p>}
     <form className="auth-form" onSubmit={submit} aria-busy={busy}>
       {mode === "signup" && <label><span>Display name <i>optional</i></span><input type="text" value={displayName} onChange={e => setDisplayName(e.target.value)} autoComplete="name" /></label>}
       <label><span>Email address</span><input type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" autoCapitalize="none" spellCheck={false} placeholder="you@example.com" required /></label>
-      <label htmlFor="password"><span>Password{mode === "signup" && <i>at least 6 characters</i>}</span></label><div className="password-field"><input id="password" type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={mode === "signup" ? 6 : undefined} required /><button className="password-reveal" type="button" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}>{showPassword ? "Hide" : "Show"}</button></div>
+      {mode !== "recover" && <><label htmlFor="password"><span>Password{mode === "signup" && <i>at least 6 characters</i>}</span></label><div className="password-field"><input id="password" type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={mode === "signup" ? 6 : undefined} required /><button className="password-reveal" type="button" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}>{showPassword ? "Hide" : "Show"}</button></div></>}
       {mode === "signup" && <label><span>Confirm password</span><input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} autoComplete="new-password" minLength={6} required /></label>}
-      <button className="auth-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "login" ? "Sign In →" : "Create Account →"}</button>
+      <button className="auth-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "login" ? "Sign In →" : mode === "recover" ? "Send recovery link →" : "Create Account →"}</button>
     </form>
+    {mode === "login" && <p className="auth-switch"><button type="button" disabled={busy} onClick={() => switchMode("recover")}>Forgot password?</button></p>}
+    {mode === "recover" && <p className="auth-switch"><button type="button" disabled={busy} onClick={() => switchMode("login")}>Back to sign in</button></p>}
     <div className="auth-divider"><span>OR</span></div>
     <GoogleButton />
     <p className="auth-switch">{mode === "login" ? "Don’t have an account?" : "Already have an account?"} <button type="button" disabled={busy} onClick={() => switchMode(mode === "login" ? "signup" : "login")}>{mode === "login" ? "Sign Up" : "Log In"}</button></p>
