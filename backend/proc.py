@@ -81,7 +81,20 @@ def kill_all() -> None:
 
 def active_count() -> int:
     with _lock:
-        return sum(len(v) for v in _active.values())
+        # Only still-running children count as "active". A killed process
+        # stays registered until the spawning thread's communicate() returns;
+        # counting it would make cancellation look like it left orphans.
+        total = 0
+        for jid in list(_active.keys()):
+            s = _active[jid]
+            for p in list(s):
+                if p.poll() is not None:
+                    s.discard(p)
+            if s:
+                total += len(s)
+            else:
+                del _active[jid]
+        return total
 
 
 def prune(job_id: str) -> None:

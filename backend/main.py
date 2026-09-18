@@ -17,6 +17,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 import auth as auth_mod, config, credits as credits_mod, jobs
+import cloud_identity
 import email_service
 import gumroad as gumroad_mod
 
@@ -71,6 +72,28 @@ def _cip(r):
 
 ALLOWED=[o.strip() for o in os.getenv("CLPZ_ALLOWED_ORIGINS","http://localhost:8000,http://127.0.0.1:8000").split(",") if o.strip()]
 
+import capability as _capability
+
+
+def _startup_capability_gate():
+    """Production startup must reject unsupported insecure modes (task 03).
+
+    A non-debug server that also disables the capability gate is an unsafe
+    combination for the desktop boundary — refuse to serve.
+    """
+    if not _capability.REQUIRE_CAPABILITY and not config.DEBUG:
+        raise SystemExit(
+            "CLPZ: refusing to start — CLPZ_REQUIRE_CAPABILITY=0 without "
+            "CLPZ_DEBUG=1 is an unsupported insecure mode."
+        )
+    # Every supported backend entry point imports this module. A desktop
+    # launcher token is already active; direct uvicorn/clpz_server startup
+    # receives a fresh local token for this process instead.
+    _capability.initialize_token()
+
+
+_startup_capability_gate()
+
 CSP="default-src 'self';script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;font-src 'self' https://fonts.gstatic.com;img-src 'self' data blob;connect-src 'self' https://*.supabase.co wss://*.supabase.co;media-src 'self' blob;frame-ancestors 'none'"
 
 class SecMid(BaseHTTPMiddleware):
@@ -119,6 +142,22 @@ def get_current_user(request: Request) -> str:
 _JOB_ID_RE = re.compile(r"^[0-9a-f]{12}$")
 
 
+def _is_admin(user_id: str | None) -> bool:
+    """Single admin predicate (task 04): the trusted provisioned role.
+
+    Admin rights come ONLY from the server-side ``users.role`` attribute set
+    by the provisioning CLI. A configured email string (CLPZ_ADMIN_EMAIL) is
+    never an authorization source — registering the owner's email grants
+    nothing.
+    """
+    if not user_id:
+        return False
+    try:
+        return db.get_user_role(user_id) == "admin"
+    except Exception:
+        return False
+
+
 def _check_job_access(job_id: str, request: Request) -> dict:
     """Validate job_id shape and enforce ownership when the job belongs to a user.
 
@@ -136,11 +175,7 @@ def _check_job_access(job_id: str, request: Request) -> dict:
     if owner:
         uid = _get_session_user(request)
         if uid != owner:
-            is_admin = False
-            if uid:
-                u = auth_mod.get_user_by_id(uid)
-                is_admin = bool(u and ADMIN_EMAIL and u.get("email") == ADMIN_EMAIL)
-            if not is_admin:
+            if not _is_admin(uid):
                 raise HTTPException(404, "Job not found.")
     return job
 
@@ -150,16 +185,20 @@ def optional_user(request: Request) -> str | None:
     return _get_session_user(request)
 
 
-ADMIN_EMAIL = os.getenv("CLPZ_ADMIN_EMAIL", "")
+# F01 fix (task 04): CLPZ_ADMIN_EMAIL is no longer an authorization source.
+# Keep the variable for launcher compatibility only; it grants nothing.
+ADMIN_EMAIL = ""  # deprecated: admin is determined by users.role only
 
 
 def require_admin(request: Request) -> str:
-    """Dependency: require admin authorization. Returns user_id."""
+    """Dependency: require admin authorization. Returns user_id.
+
+    Task 04: authorization uses the provisioned role, never an email match.
+    """
     user_id = _get_session_user(request)
     if not user_id:
         raise HTTPException(401, "Please log in.")
-    user = auth_mod.get_user_by_id(user_id)
-    if not user or user.get("email") != ADMIN_EMAIL:
+    if not _is_admin(user_id):
         raise HTTPException(403, "Admin access required.")
     return user_id
 
@@ -205,6 +244,39 @@ app.add_middleware(
     allow_credentials=True,
 )
 app.add_middleware(SecMid)
+
+
+class LocalBoundaryMiddleware(BaseHTTPMiddleware):
+    """Local API boundary (task 03): Host validation + per-launch capability.
+
+    Runs before CORS. Rules:
+    - Host header must be a loopback/allowlisted form (untrusted Host fails).
+    - Cross-origin browser requests (Origin present and not same-origin)
+      are rejected for state-changing routes.
+    - State-changing routes (POST/PUT/PATCH/DELETE outside /api/auth/) require
+      the per-launch capability header that only the desktop UI receives.
+    - Read-only routes (playback, thumbnails, pages, diagnostics) stay open so
+      video Range playback and images keep working from the desktop UI.
+    """
+
+    async def dispatch(self, request, call_next):
+        allowed, reason = _capability.check_request(
+            request.method, request.url.path, request.headers
+        )
+        if not allowed:
+            if reason == "untrusted-host":
+                return JSONResponse({"detail": "Untrusted Host."}, status_code=421)
+            if reason == "cross-origin-browser-request":
+                return JSONResponse(
+                    {"detail": "Cross-origin request rejected."}, status_code=403
+                )
+            return JSONResponse(
+                {"detail": "Missing or invalid capability token."}, status_code=403
+            )
+        return await call_next(request)
+
+
+app.add_middleware(LocalBoundaryMiddleware)
 
 
 def _json_safe(value):
@@ -254,6 +326,7 @@ print("CLPZ: Database ready.")
 
 jobs.load_saved_jobs()
 jobs.start_maintenance()
+jobs.start_watchdog()  # task 11: force-fail edit renders past their deadline
 
 
 def _limiter_prune_loop():
@@ -372,8 +445,106 @@ def get_me(user_id: str = Depends(get_current_user)):
     return {"user": user}
 
 
+class DeviceLinkRequest(BaseModel):
+    state: str = Field(min_length=16, max_length=128)
+
+
+class DeviceRedeemRequest(BaseModel):
+    code: str = Field(min_length=16, max_length=128)
+    state: str = Field(min_length=16, max_length=128)
+
+
+# R08: Supabase cloud identity is intentionally separate from the legacy
+# SQLite account/session routes above and below. A local cookie cannot mint a
+# cloud link or make a local balance appear as a paid cloud entitlement.
+class CloudLinkCompleteRequest(BaseModel):
+    code: str = Field(min_length=32, max_length=128)
+
+
+@app.post("/api/cloud/link/start")
+def start_cloud_link():
+    try:
+        return cloud_identity.begin_link()
+    except cloud_identity.CloudIdentityError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+
+@app.post("/api/cloud/link/complete")
+def complete_cloud_link(req: CloudLinkCompleteRequest, request: Request):
+    if auth_rl.is_rate_limited("cloudlink:" + _cip(request)):
+        raise HTTPException(429, "Too many link attempts. Please try later.")
+    try:
+        return cloud_identity.complete_link(req.code)
+    except cloud_identity.CloudIdentityError as exc:
+        raise HTTPException(401, str(exc)) from exc
+
+
+@app.get("/api/cloud/account")
+def cloud_account():
+    try:
+        return cloud_identity.account()
+    except cloud_identity.CloudSessionMissing as exc:
+        raise HTTPException(401, str(exc)) from exc
+    except cloud_identity.CloudIdentityError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+
+@app.post("/api/cloud/signout")
+def cloud_signout():
+    try:
+        cloud_identity.unlink()
+    except cloud_identity.CloudIdentityError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return {"ok": True}
+
+
+# ── Legacy LOCAL device-link handoff (task 16) ─────────────────────
+# These routes issue/redeem SQLite sessions only. They do not authenticate a
+# Supabase user or grant cloud access. The separate /api/cloud/* flow above
+# is the R08 website-to-Windows identity contract.
+
+@app.post("/api/auth/device-link")
+def create_device_link(req: DeviceLinkRequest, user_id: str = Depends(get_current_user)):
+    """Mint a device-link code for the caller's own account (authenticated)."""
+    code = db.create_device_link_code(user_id, req.state)
+    log.info("device-link code minted for user %s", user_id)
+    return {"code": code, "expires_in": db.DEVICE_LINK_TTL_SECONDS}
+
+
+@app.post("/api/auth/device-link/redeem")
+def redeem_device_link(req: DeviceRedeemRequest, request: Request):
+    """Redeem code+state once; exchange for a normal session cookie.
+
+    Rate limited separately from login so a leaked code cannot be brute
+    forced through this endpoint.
+    """
+    if auth_rl.is_rate_limited("devicelink:" + _cip(request)):
+        raise HTTPException(429, "Too many attempts. Please try again later.")
+    user_id = db.redeem_device_link_code(req.code, req.state)
+    if not user_id:
+        # Used, expired, wrong state, or unknown — one message for all:
+        # never reveal which check failed.
+        raise HTTPException(401, "This link code is invalid or has expired.")
+    token = auth_mod.create_session(user_id)
+    resp = JSONResponse({"ok": True, "user_id": user_id})
+    resp.set_cookie("clpz_session", token, httponly=True, samesite="strict",
+                    secure=_cookie_secure(request), max_age=86400 * 7)
+    return resp
+
+
 @app.post("/api/auth/reset")
-def reset_password(req: ResetRequest):
+def reset_password(request: Request, req: ResetRequest):
+    """Password reset with current-password proof.
+
+    Task 04: every password-verification path is throttled by the client peer
+    (and by account), so brute-force guessing of the current password reaches
+    429. X-Forwarded-For cannot evade this because _cip uses the socket peer
+    unless the peer is a configured trusted proxy.
+    """
+    email_key = req.email.strip().lower()
+    if auth_rl.is_rate_limited("login:" + _cip(request)) or \
+            auth_rl.is_rate_limited("login:acct:" + email_key):
+        raise HTTPException(429, "Too many attempts. Please try again later.")
     user = auth_mod.authenticate_user(req.email, req.current_password)
     if not user:
         raise HTTPException(401, "Current password is incorrect.")
@@ -495,6 +666,10 @@ async def gumroad_webhook(request: Request):
     granted twice for the same Gumroad transaction.
     """
     raw = await request.body()
+    # Bounded request admission (task 11): reject oversized webhook bodies
+    # before parsing rather than after (mirrors the upload cap ordering).
+    if len(raw) > jobs.WEBHOOK_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Webhook payload too large")
     signature = request.headers.get("x-gumroad-signature", "")
     if not gumroad_mod.verify_signature(raw, signature):
         raise HTTPException(status_code=403, detail="Invalid webhook signature")
@@ -520,11 +695,16 @@ class JobRequest(BaseModel):
     idempotency_key: str = Field(default="")
 
 
-def _job_payload(job: dict) -> dict:
+def _job_payload(job: dict, backfill: bool = False) -> dict:
     """Return the public job representation without creating another store.
 
     Media URLs are deterministic views of the persisted clip record.  The
     job JSON remains the single source of truth for rendered media metadata.
+
+    Task 19: metadata backfill (ffprobe + thumbnail generation) runs ONLY
+    when explicitly requested — GET requests must never launch surprise
+    media workloads. The job-status detail endpoint passes backfill=True
+    for a single clip's view; list endpoints never do.
     """
     for clip in job.get("clips", []):
         if clip.get("status") != "done":
@@ -532,9 +712,10 @@ def _job_payload(job: dict) -> dict:
         index = clip.get("index")
         if index is None:
             continue
-        refreshed = jobs.ensure_clip_metadata(job["id"], index)
-        if refreshed:
-            clip.update(refreshed)
+        if backfill:
+            refreshed = jobs.ensure_clip_metadata(job["id"], index)
+            if refreshed:
+                clip.update(refreshed)
         base = f"/api/jobs/{job['id']}/clips/{index}"
         clip["stream_url"] = f"{base}/stream"
         clip["download_url"] = base
@@ -545,7 +726,9 @@ def _job_payload(job: dict) -> dict:
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin_page():
-    return ADMIN_PAGE.read_text(encoding="utf-8")
+    """Serve the admin page with the per-launch capability injected (the admin
+    console issues POSTs that pass the local boundary)."""
+    return _with_capability(ADMIN_PAGE.read_text(encoding="utf-8"))
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -555,12 +738,33 @@ def index():
 
 @app.get("/auth.html", response_class=HTMLResponse)
 def auth_page():
-    return AUTH_PAGE.read_text(encoding="utf-8")
+    return _with_capability(AUTH_PAGE.read_text(encoding="utf-8"))
 
 
 @app.get("/app", response_class=HTMLResponse)
 def dashboard():
-    return DASHBOARD.read_text(encoding="utf-8")
+    """Serve the desktop workspace with the per-launch capability injected.
+
+    The token is placed in a meta tag by the server (never in the URL, never
+    in an API response or log) and read by clpz.html's fetch wrapper.
+    """
+    return _with_capability(DASHBOARD.read_text(encoding="utf-8"))
+
+
+def _with_capability(html: str) -> str:
+    """Inject the local capability into a server-rendered application page.
+
+    This is the only browser delivery channel. It deliberately avoids URLs,
+    JSON responses, cookies, and log messages.
+    """
+    token = _capability.current_token()
+    if not token:
+        return html
+    marker = "</head>"
+    inject = f'<meta name="clpz-capability" content="{token}">'
+    if marker in html:
+        return html.replace(marker, inject + marker, 1)
+    return inject + html
 
 
 # ── React App (Vite + Tailwind) ───────────────────────────────
@@ -573,9 +777,8 @@ if REACT_APP_DIR.exists() and (REACT_APP_DIR / "index.html").exists():
 
     def _react_index():
         # no-cache: index.html must revalidate (hashed assets can cache forever)
-        return FileResponse(
-            str(REACT_APP_DIR / "index.html"),
-            media_type="text/html",
+        return HTMLResponse(
+            _with_capability((REACT_APP_DIR / "index.html").read_text(encoding="utf-8")),
             headers={"Cache-Control": "no-cache"},
         )
 
@@ -621,10 +824,16 @@ def create_job(req: JobRequest, request: Request):
     # so rapid retries cannot collide into duplicate jobs/charges.
     idempotency_key = req.idempotency_key or uuid.uuid4().hex
 
-    job_id, is_new, remaining = jobs.create_job_idempotent(
-        url, req.max_clips, req.top_text,
-        user_id=user_id, idempotency_key=idempotency_key,
-    )
+    try:
+        job_id, is_new, remaining = jobs.create_job_idempotent(
+            url, req.max_clips, req.top_text,
+            user_id=user_id, idempotency_key=idempotency_key,
+        )
+    except jobs.IdempotencyConflict as e:
+        raise HTTPException(409, str(e))
+    except jobs.QueueFullError as e:
+        # Task 11: bounded admission — reject BEFORE any charge.
+        raise HTTPException(503, str(e))
     if job_id is None:
         raise HTTPException(
             402,
@@ -653,16 +862,150 @@ def _job_visible_to(job: dict, user_id: str | None, is_admin: bool) -> bool:
 
 
 @app.get("/api/jobs")
-def list_jobs(request: Request):
-    """List persisted projects for the Projects screen (scoped to caller)."""
+def list_jobs(
+    request: Request,
+    page: int = 1,
+    per_page: int = 20,
+    q: str = "",
+    sort: str = "newest",
+):
+    """List persisted projects (task 19: PAGINATED LIGHTWEIGHT SUMMARIES).
+
+    The old endpoint copied every job with full clip/word detail. Summaries
+    carry identity/status/progress plus clip COUNTS only — word-level arrays
+    and per-clip metadata live behind the per-job detail endpoint. Supports
+    search (title substring) and stable sort. Backward compatibility: the
+    vanilla UI consumes this shape and renders counts, so no client break.
+    """
     uid = _get_session_user(request)
-    is_admin = False
-    if uid:
-        u = auth_mod.get_user_by_id(uid)
-        is_admin = bool(u and ADMIN_EMAIL and u.get("email") == ADMIN_EMAIL)
-    visible = [j for j in jobs.get_all_jobs() if _job_visible_to(j, uid, is_admin)]
-    visible.sort(key=lambda job: job.get("created_at", 0), reverse=True)
-    return [_job_payload(job) for job in visible]
+    is_admin = _is_admin(uid)
+    all_jobs = jobs.get_all_jobs()
+    visible = [j for j in all_jobs if _job_visible_to(j, uid, is_admin)]
+
+    needle = (q or "").strip().lower()
+    if needle:
+        visible = [j for j in visible
+                   if needle in str(j.get("url", "")).lower()
+                   or needle in str((j.get("video") or {}).get("title", "")).lower()]
+
+    reverse = sort != "oldest"
+    visible.sort(key=lambda job: job.get("created_at", 0), reverse=reverse)
+
+    total = len(visible)
+    per_page = max(1, min(int(per_page), 100))
+    page = max(1, int(page))
+    start = (page - 1) * per_page
+    page_items = visible[start:start + per_page]
+
+    summaries = []
+    for job in page_items:
+        clips = job.get("clips") or []
+        summaries.append({
+            "id": job.get("id"),
+            "created_at": job.get("created_at"),
+            "stage": job.get("stage"),
+            "progress": job.get("progress"),
+            "input_type": job.get("input_type"),
+            "url": job.get("url"),
+            "title": (job.get("video") or {}).get("title"),
+            "error": job.get("error"),
+            "error_code": job.get("error_code"),
+            "clip_count": len([c for c in clips if c.get("status") == "done"]),
+            "clip_total": len(clips),
+        })
+
+    return {
+        "projects": summaries,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    }
+
+
+@app.get("/api/jobs/storage")
+def storage_summary(request: Request):
+    """Disk usage per project inside the managed data root (task 19)."""
+    uid = _get_session_user(request)
+    is_admin = _is_admin(uid)
+    data_root = Path(config.DATA_DIR).resolve()
+    per_project = []
+    for job in jobs.get_all_jobs():
+        if not _job_visible_to(job, uid, is_admin):
+            continue
+        job_dir = (data_root / job["id"])
+        size = 0
+        if job_dir.exists():
+            for p in job_dir.rglob("*"):
+                try:
+                    if p.is_file():
+                        size += p.stat().st_size
+                except OSError:
+                    pass
+        per_project.append({"job_id": job["id"],
+                            "title": (job.get("video") or {}).get("title") or job.get("url"),
+                            "bytes": size})
+    total_bytes = sum(p["bytes"] for p in per_project)
+    return {"total_bytes": total_bytes, "projects": per_project,
+            "data_root": str(data_root)}
+
+
+@app.delete("/api/jobs/{job_id}")
+def delete_project(job_id: str, request: Request):
+    """Delete a project with explicit scope (task 19).
+
+    Scope: the project's MANAGED working directory under the data root
+    (source downloads/uploads, transcripts, rendered clips) plus its job
+    record and idempotency mappings. NEVER touched: files the user exported
+    to their Videos folder, external URLs, and anything outside the data
+    root (path validation below). A running/queued job is cancelled first so
+    a worker cannot recreate a ghost; the cancel event makes the worker exit
+    without further writes.
+    """
+    job = _check_job_access(job_id, request)
+    uid = _get_session_user(request)
+
+    # Ownership: admins may manage anything; users only their own; anonymous
+    # (desktop local) jobs may be removed from the local machine.
+    owner = job.get("user_id")
+    if owner and owner != uid and not _is_admin(uid):
+        raise HTTPException(403, "Not your project.")
+
+    # Refuse to delete a job that is actively running (cancel first, then
+    # delete) to keep the worker/record race-free.
+    if job.get("stage") not in ("done", "error", "cancelled", "queued"):
+        raise HTTPException(409, "Cancel the running job before deleting it.")
+
+    if job.get("stage") == "queued":
+        jobs.cancel_job(job_id)
+
+    # Path validation: the managed directory must resolve INSIDE the data
+    # root (defense against crafted ids like '..%2f..').
+    data_root = Path(config.DATA_DIR).resolve()
+    job_dir = (data_root / job_id).resolve()
+    if job_dir != data_root and data_root not in job_dir.parents:
+        raise HTTPException(400, "Invalid project path.")
+
+    removed_bytes = 0
+    if job_dir.exists() and job_dir.is_dir():
+        for p in job_dir.rglob("*"):
+            try:
+                if p.is_file():
+                    removed_bytes += p.stat().st_size
+            except OSError:
+                pass
+        shutil.rmtree(job_dir, ignore_errors=True)
+
+    # Ledger/history retention: credit transactions survive (financial
+    # record); the job mapping + replay keys go so the submission key cannot
+    # resurrect the project.
+    with jobs._lock:
+        jobs.JOBS.pop(job_id, None)
+    db.delete_job(job_id)
+    db.delete_idempotency_jobs_by_job(job_id)
+
+    log.info("project %s deleted by %s (%d bytes freed)", job_id, uid or "local", removed_bytes)
+    return {"deleted": job_id, "bytes_freed": removed_bytes,
+            "policy": "working files removed; exports in your Videos folder and external sources were not touched"}
 
 
 @app.post("/api/jobs/upload")
@@ -706,120 +1049,120 @@ async def upload_job(
 
     user_id = _get_session_user(request)
 
-    # One logical upload (by idempotency key) = one job = one charge.
+    # R04: stage and validate every request before accepting an idempotency
+    # replay.  Claiming the key first meant a changed second upload returned
+    # the old job without ever reading its body.
     idempotency_key = idempotency_key or uuid.uuid4().hex
-    job_id, is_new, remaining = jobs.create_upload_job_idempotent(
-        filename=file.filename,
-        max_clips=max_clips,
-        top_text=top_text,
-        user_id=user_id,
-        idempotency_key=idempotency_key,
-    )
-    if job_id is None:
-        raise HTTPException(
-            402,
-            f"Not enough credits. You need {credits_mod.COST_PER_FORGE} credit(s) "
-            f"but have {remaining}.",
-        )
-    if not is_new:
-        # Duplicate submit of the same upload: return the original job untouched.
-        return {"job_id": job_id, "credits_remaining": remaining}
-
-    job_dir = config.DATA_DIR / job_id
-    job_dir.mkdir(parents=True, exist_ok=True)
-
-    video_path = job_dir / f"source{ext}"
-
+    staging_dir = config.DATA_DIR / ".upload-staging"
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    staging_path = staging_dir / f"{uuid.uuid4().hex}.part"
     MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
+
     try:
-        with video_path.open("wb") as out:
-            written = 0
-            while True:
-                chunk = await file.read(1024 * 1024)
-
-                if not chunk:
-                    break
-
-                written += len(chunk)
-                if written > MAX_UPLOAD_BYTES:
-                    out.close()
-                    video_path.unlink(missing_ok=True)
-                    jobs.cancel_job(job_id)
-                    if user_id and remaining is not None:
-                        credits_mod.refund(
-                            user_id, credits_mod.COST_PER_FORGE,
-                            reason="Upload too large — refund"
+        try:
+            with staging_path.open("xb") as out:
+                written = 0
+                while True:
+                    chunk = await file.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    if written > MAX_UPLOAD_BYTES:
+                        raise HTTPException(
+                            413, "Video is too large. Maximum upload size is 2 GB."
                         )
-                    raise HTTPException(
-                        413,
-                        "Video is too large. Maximum upload size is 2 GB.",
-                    )
+                    out.write(chunk)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            log.warning("failed to stage upload", exc_info=True)
+            raise HTTPException(500, "Failed to save uploaded video.") from exc
 
-                out.write(chunk)
-
-    except HTTPException:
-        raise
-    except Exception:
-        # Post-charge failure: refund idempotently, cancel the job, remove the
-        # key mapping and any partial file.  Never leave a charged, stuck job.
-        video_path.unlink(missing_ok=True)
-        jobs.cancel_job(job_id)
-        db.delete_idempotency_job_by_key(idempotency_key)
-        if user_id and remaining is not None:
-            credits_mod.refund(
-                user_id, credits_mod.COST_PER_FORGE,
-                related_id=job_id,
-                reason="Upload failed after charge — refund",
+        # Validate before the idempotency claim as well as before any credit
+        # debit.  If ffprobe itself is unavailable, retain the existing
+        # behavior and let the media pipeline perform validation later.
+        try:
+            probe_result = subprocess.run(
+                [
+                    jobs._find_bin("ffprobe"), "-v", "error",
+                    "-show_entries", "stream=codec_type",
+                    "-show_entries", "format=duration",
+                    "-of", "json", str(staging_path),
+                ],
+                capture_output=True, text=True, timeout=15,
             )
-        raise HTTPException(
-            500,
-            "Failed to save uploaded video.",
-        )
-
-    # Quick ffprobe validation — reject obviously corrupted files early
-    try:
-        import shutil as _shutil
-        ffprobe_bin = jobs._find_bin("ffprobe")
-        probe_result = subprocess.run(
-            [
-                ffprobe_bin, "-v", "error",
-                "-show_entries", "stream=codec_type",
-                "-show_entries", "format=duration",
-                "-of", "json", str(video_path),
-            ],
-            capture_output=True, text=True, timeout=15,
-        )
-        if probe_result.returncode != 0:
-            video_path.unlink(missing_ok=True)
-            jobs.cancel_job(job_id)
-            if user_id and remaining is not None:
-                credits_mod.refund(
-                    user_id, credits_mod.COST_PER_FORGE,
-                    reason="Upload validation failed — refund"
+            if probe_result.returncode != 0:
+                raise HTTPException(
+                    400,
+                    "The uploaded file is not a valid video. "
+                    "Please upload a valid MP4, MOV, or MKV file.",
                 )
-            raise HTTPException(
-                400,
-                "The uploaded file is not a valid video. "
-                "Please upload a valid MP4, MOV, or MKV file."
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
+        # This is deliberately mandatory: a replay is accepted only after
+        # the same bounded content digest has been calculated for this body.
+        try:
+            content_fingerprint = jobs.file_fingerprint(staging_path)
+        except Exception as exc:
+            log.warning("failed to fingerprint staged upload", exc_info=True)
+            raise HTTPException(500, "Failed to verify uploaded video.") from exc
+
+        try:
+            job_id, is_new, remaining = jobs.create_upload_job_idempotent(
+                filename=file.filename,
+                max_clips=max_clips,
+                top_text=top_text,
+                user_id=user_id,
+                idempotency_key=idempotency_key,
+                content_fingerprint=content_fingerprint,
             )
-    except HTTPException:
-        raise
-    except Exception:
-        pass  # If ffprobe is missing or errors, let the pipeline handle it
+        except jobs.IdempotencyConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except jobs.QueueFullError as exc:
+            # The queue check happens only after the body can be proven to
+            # match a retry, but still before charging or creating work.
+            raise HTTPException(503, str(exc)) from exc
 
-    jobs.start_uploaded_job(
-        job_id,
-        str(video_path),
-        file.filename,
-    )
+        if job_id is None:
+            raise HTTPException(
+                402,
+                f"Not enough credits. You need {credits_mod.COST_PER_FORGE} credit(s) "
+                f"but have {remaining}.",
+            )
+        if not is_new:
+            return {"job_id": job_id, "credits_remaining": remaining}
 
-    return {"job_id": job_id, "credits_remaining": remaining}
+        job_dir = config.DATA_DIR / job_id
+        video_path = job_dir / f"source{ext}"
+        try:
+            job_dir.mkdir(parents=True, exist_ok=True)
+            # Both paths are beneath DATA_DIR, so replace is an atomic rename
+            # and never copies the upload a second time.
+            os.replace(staging_path, video_path)
+            jobs.start_uploaded_job(job_id, str(video_path), file.filename)
+        except Exception as exc:
+            video_path.unlink(missing_ok=True)
+            jobs._rollback_failed_submission(
+                job_id, user_id, "Upload processing failed to start — refund", idempotency_key
+            )
+            raise HTTPException(500, "Failed to start uploaded video processing.") from exc
+
+        return {"job_id": job_id, "credits_remaining": remaining}
+    finally:
+        # Covers conflicts, duplicate retries, validation failures, and every
+        # pre-rename failure.  No new request can leave user media in staging.
+        staging_path.unlink(missing_ok=True)
 
 
 @app.get("/api/jobs/{job_id}")
 def job_status(job_id: str, request: Request):
     job = _check_job_access(job_id, request)
-    return _job_payload(job)
+    # Detail view: backfill allowed for this single job (task 19 contract —
+    # list endpoints never trigger media workloads).
+    return _job_payload(job, backfill=True)
 
 
 @app.post("/api/jobs/clear")
@@ -847,23 +1190,30 @@ def retry_job(job_id: str, request: Request):
     if job.get("stage") not in ("error", "cancelled"):
         raise HTTPException(400, "Only failed or cancelled jobs can be retried.")
 
-    # Clear the error state and mark as queued for reprocessing
-    completed = list(job.get("completed_stages", []))
-    with jobs._lock:
-        jobs.JOBS[job_id].update({
-            "stage": "queued",
-            "error": None,
-            "error_code": None,
-            "progress": 0.0,
-            "completed_stages": completed,
-        })
-        jobs._persist(jobs.JOBS[job_id])
+    # A retry is another worker submission and must obey the same pending
+    # capacity as a new forge or upload.
+    if not jobs.try_acquire_slot(job_id):
+        raise HTTPException(503, "The processing queue is full. Please try again in a moment.")
 
-    # Create a new cancel event
-    jobs._cancel_events[job_id] = threading.Event()
+    try:
+        # Clear the error state and mark as queued for reprocessing
+        completed = list(job.get("completed_stages", []))
+        with jobs._lock:
+            jobs.JOBS[job_id].update({
+                "stage": "queued",
+                "error": None,
+                "error_code": None,
+                "progress": 0.0,
+                "completed_stages": completed,
+            })
+            jobs._persist(jobs.JOBS[job_id])
 
-    t = threading.Thread(target=jobs._run, args=(job_id,), daemon=True)
-    t.start()
+        jobs._cancel_events[job_id] = threading.Event()
+        t = threading.Thread(target=jobs._run, args=(job_id,), daemon=True)
+        t.start()
+    except Exception:
+        jobs._release_admission(job_id)
+        raise
 
     return {"job_id": job_id, "resumed_from": completed}
 
@@ -1200,8 +1550,17 @@ def edit_clip(job_id: str, index: int, req: EditRequest, request: Request):
     if not src_path:
         raise HTTPException(404, "Source clip file not found.")
 
+    # Bounded admission (task 11): edit renders share the same worker slot
+    # budget as pipeline jobs. A short queue absorbs bursts; beyond it the
+    # request fails fast (503) instead of growing worker load unbounded.
+    if not jobs._edit_semaphore.acquire(blocking=True, timeout=jobs.EDIT_QUEUE_WAIT_SECONDS):
+        raise HTTPException(503, "Editor is busy; try again shortly.")
+
     job_dir = config.DATA_DIR / job_id
-    out_path = job_dir / f"clip_{index}_edited.mp4"
+    # Unique temporary output per request (task 06): two simultaneous edits of
+    # the same clip must never write the same pathname; the file is promoted
+    # only after validation succeeds.
+    out_path = job_dir / f"clip_{index}_edited_{uuid.uuid4().hex[:8]}.mp4"
 
     # Build FFmpeg filter chain
     import platform
@@ -1213,12 +1572,20 @@ def edit_clip(job_id: str, index: int, req: EditRequest, request: Request):
     vf_parts = []
     af_parts = []
 
-    # Speed adjustment
+    # Speed adjustment across the full accepted 0.25–4 range (task 06).
+    # atempo accepts [0.5, 100], so factor the tempo into valid stages:
+    # <0.5 uses 0.5 * (speed/0.5); >2 uses 2.0 * (speed/2.0).
     if req.speed != 1.0:
         vf_parts.append(f"setpts={1.0/req.speed}*PTS")
-        af_parts.append(f"atempo={min(req.speed, 2.0)}")
-        if req.speed > 2.0:
-            af_parts.append(f"atempo={min(req.speed/2.0, 2.0)}")
+        s = req.speed
+        if s < 0.5:
+            af_parts.append("atempo=0.5")
+            af_parts.append(f"atempo={s / 0.5:.6f}")
+        elif s > 2.0:
+            af_parts.append("atempo=2.0")
+            af_parts.append(f"atempo={s / 2.0:.6f}")
+        else:
+            af_parts.append(f"atempo={s:.6f}")
 
     # Text overlays (already validated by the typed model; escape for the
     # drawtext filter and disable %-expansion so client text cannot break out
@@ -1269,17 +1636,38 @@ def edit_clip(job_id: str, index: int, req: EditRequest, request: Request):
     cmd.append(str(out_path))
 
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        # Register with the watchdog (task 11) so a wedged render that outlives
+        # its hard deadline is force-failed even if cooperative timeout cannot
+        # interrupt the subprocess.
+        jobs.note_edit_started(job_id, index, out_path.name)
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=jobs.EDIT_RENDER_DEADLINE_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            raise jobs.RenderTimeoutError(
+                f"Edit render exceeded its {jobs.EDIT_RENDER_DEADLINE_SECONDS}s deadline"
+            )
         if proc.returncode != 0:
             raise RuntimeError(f"FFmpeg failed: {proc.stderr[-500:]}")
     except Exception as e:
-        raise HTTPException(500, f"Edit render failed: {e}")
+        out_path.unlink(missing_ok=True)
+        raise HTTPException(
+            504 if isinstance(e, jobs.RenderTimeoutError) else 500,
+            f"Edit render failed: {e}",
+        )
+    finally:
+        jobs._edit_semaphore.release()
 
-    # Validate output
-    validation = jobs._validate_output(out_path)
+    # Validate output. A muted export intentionally has no audio stream.
+    validation = jobs._validate_output(out_path, expect_audio=not req.muted)
     if not validation.get("valid"):
         out_path.unlink(missing_ok=True)
         raise HTTPException(500, f"Edited output invalid: {validation.get('error', 'unknown')}")
+    jobs.note_edit_finished(job_id, index)
 
     # Save to user's clips folder
     clips_dir = config.CLIPS_DIR
@@ -1288,10 +1676,53 @@ def edit_clip(job_id: str, index: int, req: EditRequest, request: Request):
     safe = re.sub(r"[^\w\- ]", "", title).strip().replace(" ", "_") or f"clip_{index}"
     dest = _unique_path(clips_dir, f"{safe}_edited.mp4")
     shutil.copy2(str(out_path), str(dest))
+    out_path.unlink(missing_ok=True)  # temp output promoted; remove staging copy
+
+    # ── Durable edit version (task 18 / F23): persist the versioned edit
+    # contract on the job record so choices survive restart and exports carry
+    # their version metadata. The ORIGINAL media is never modified.
+    edit_version = {
+        "version": f"v{int(time.time())}-{uuid.uuid4().hex[:6]}",
+        "schema": "clpz.edit.v1",
+        "created_at": time.time(),
+        "clip_index": index,
+        "source_clip": {"start": clip.get("start"), "end": clip.get("end"),
+                        "file": clip.get("file")},
+        "trim_start": req.trim_start,
+        "trim_end": req.trim_end,
+        "speed": req.speed,
+        "volume": req.volume,
+        "muted": req.muted,
+        "text_overlays": [o.model_dump() for o in req.text_overlays],
+        "export": {"path": str(dest), "filename": dest.name,
+                   "duration": validation.get("duration"),
+                   "has_audio": req.muted is False and validation.get("audio_codec") is not None},
+    }
+    with jobs._lock:
+        j = jobs.JOBS.get(job_id)
+        if j is not None:
+            j.setdefault("edit_versions", []).append(edit_version)
+            jobs._persist(j)
 
     return {
         "saved_to": str(dest),
         "filename": dest.name,
         "folder": str(clips_dir),
         "message": "Edited clip saved.",
+        "edit_version": edit_version["version"],
+        "schema": edit_version["schema"],
+        "validation": {
+            "duration": validation.get("duration"),
+            "has_audio": req.muted is False and validation.get("audio_codec") is not None,
+        },
     }
+
+
+@app.get("/api/jobs/{job_id}/edit-versions")
+def list_edit_versions(job_id: str, request: Request):
+    """List durable edit versions for a job (task 18 contract)."""
+    _check_job_access(job_id, request)
+    job = jobs.get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found.")
+    return {"versions": job.get("edit_versions", []), "schema": "clpz.edit.v1"}

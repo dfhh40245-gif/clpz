@@ -68,8 +68,9 @@ class TestJobIsolation:
         job_a = _create_job(a, base, "lista")
         job_b = _create_job(b, base, "listb")
 
-        ids_a = {j["id"] for j in a.get(f"{base}/api/jobs").json()}
-        ids_b = {j["id"] for j in b.get(f"{base}/api/jobs").json()}
+        # Task 19: list returns paginated summaries {"projects": [...]}
+        ids_a = {j["id"] for j in a.get(f"{base}/api/jobs").json()["projects"]}
+        ids_b = {j["id"] for j in b.get(f"{base}/api/jobs").json()["projects"]}
         assert job_a in ids_a
         assert job_b in ids_b
         assert job_a not in ids_b
@@ -80,10 +81,10 @@ class TestJobIsolation:
         # Desktop/private mode: anonymous job creation + listing without auth.
         anon = requests.Session()
         job_id = _create_job(anon, base, "anon")
-        assert job_id in {j["id"] for j in requests.get(f"{base}/api/jobs").json()}
+        assert job_id in {j["id"] for j in requests.get(f"{base}/api/jobs").json()["projects"]}
         # Still visible to a signed-in user (shared local jobs).
         u = _signup(base, _email("viewer"))
-        assert job_id in {j["id"] for j in u.get(f"{base}/api/jobs").json()}
+        assert job_id in {j["id"] for j in u.get(f"{base}/api/jobs").json()["projects"]}
         # And the anonymous owner can still read it by id.
         assert anon.get(f"{base}/api/jobs/{job_id}").status_code == 200
 

@@ -128,7 +128,9 @@ def process_webhook(data: dict) -> dict:
         return {"event": event, "created": False, "payment_id": None, "user_id": None, "credits": 0}
 
     # ── Idempotency guard: record the payment first ─────────────────
-    # If this external id was already recorded, NO credit mutation happens.
+    # If this external id was already recorded, NO credit mutation happens
+    # on the record step itself; fulfillment/reversal is applied exactly
+    # once via the atomic helpers below (task 08).
     user_id = _resolve_user(data)
     amount_cents = int(sale.get("amount", 0) or 0)
     currency = sale.get("currency", "usd") or "usd"
@@ -136,6 +138,13 @@ def process_webhook(data: dict) -> dict:
     is_cancellation = event in ("subscription_cancelled", "subscription_ended")
     status = "refunded" if is_reversal else ("cancelled" if is_cancellation else "paid")
 
+    # Persist the intended grant amount with the payment row. NULL means
+    # "recorded, fulfillment pending" — a crash between recording and
+    # granting leaves a recoverable operation that replay completes once.
+    # No-grant outcomes (unlinked buyer, blocked product) are recorded as
+    # already-fulfilled with 0 so replays never grant retroactively.
+    grant_intended = bool(user_id) and _product_allowed(product_id)
+    intended_amount = _credits_for_product(product_id) if grant_intended else 0
     created, payment_id = db.record_payment(
         user_id=user_id,
         provider=PROVIDER,
@@ -145,22 +154,56 @@ def process_webhook(data: dict) -> dict:
         currency=currency,
         status=status,
         raw_json=json.dumps(data),
+        credits_granted=(None if (grant_intended and status == "paid") else 0),
     )
 
     if not created:
-        # Already recorded. A reversal event for an existing payment must
-        # still transition status and reverse credits exactly once — but
-        # only if this is the first time we see the reversal.
+        # Already recorded. Three possibilities (each exactly-once):
+        #   1. A reversal event: transition status and reverse credits once.
+        #   2. A recorded-but-unfulfilled paid sale (crash recovery):
+        #      complete the grant exactly once.
+        #   3. Anything else: idempotent no-op.
         existing = db.get_payment(PROVIDER, external_id)
         if existing and status == "refunded" and existing["status"] != "refunded":
-            changed = db.update_payment_status(PROVIDER, external_id, "refunded")
-            if changed and existing.get("user_id"):
-                db.subtract_credits(existing["user_id"], _credits_for_product(product_id),
-                                    related_id=external_id,
-                                    reason=f"Gumroad refund {external_id}")
-                log.info("gumroad: reversed credits for refunded sale %s", external_id)
-                return {"event": event, "created": False, "payment_id": payment_id,
-                        "user_id": existing["user_id"], "credits": 0}
+            stored_pid = existing.get("product_id") or product_id
+            fallback = _credits_for_product(stored_pid)
+            if existing.get("user_id"):
+                try:
+                    reversed_now, _bal = db.reverse_payment_credits(
+                        PROVIDER, external_id, existing["user_id"],
+                        fallback_amount=fallback,
+                        reason=f"Gumroad refund {external_id}",
+                    )
+                except ValueError as exc:
+                    # Payment belongs to a different account than this
+                    # delivery resolved to — never reverse cross-owner.
+                    log.warning("gumroad: reversal skipped for sale %s: %s", external_id, exc)
+                    reversed_now = False
+                db.update_payment_status(PROVIDER, external_id, "refunded")
+                if reversed_now:
+                    log.info("gumroad: reversed credits for refunded sale %s", external_id)
+            else:
+                db.update_payment_status(PROVIDER, external_id, "refunded")
+            return {"event": event, "created": False, "payment_id": payment_id,
+                    "user_id": existing.get("user_id"), "credits": 0}
+
+        if (existing and status == "paid"
+                and existing.get("credits_granted") is None
+                and existing.get("user_id")):
+            # Crash-recovery replay: fulfillment was interrupted. Complete it
+            # exactly once via the atomic fulfill (credits_granted guard).
+            amount = existing.get("credits_granted")  # None by definition here
+            amount = intended_amount or _credits_for_product(existing.get("product_id") or product_id)
+            fulfilled, new_bal = db.fulfill_payment_credits(
+                PROVIDER, external_id, existing["user_id"], amount,
+                txn_type="purchase", description=f"Gumroad purchase {external_id}",
+            )
+            if fulfilled:
+                log.info("gumroad: recovered fulfillment for sale %s (%d credits)",
+                         external_id, amount)
+            return {"event": event, "created": False, "payment_id": payment_id,
+                    "user_id": existing["user_id"], "credits": amount if fulfilled else 0}
+
         log.info("gumroad: duplicate webhook for sale %s (idempotent no-op)", external_id)
         return {"event": event, "created": False, "payment_id": payment_id,
                 "user_id": user_id, "credits": 0}
@@ -179,17 +222,29 @@ def process_webhook(data: dict) -> dict:
                 "user_id": user_id, "credits": 0}
 
     if status == "paid":
-        amount = _credits_for_product(product_id)
-        credits_mod.add_credits(user_id, amount, txn_type="purchase",
-                                description=f"Gumroad purchase {external_id}")
+        amount = intended_amount
+        # Atomic record-then-grant: the grant and credits_granted marker
+        # commit as ONE transaction (task 08).
+        _fulfilled, _bal = db.fulfill_payment_credits(
+            PROVIDER, external_id, user_id, amount,
+            txn_type="purchase", description=f"Gumroad purchase {external_id}",
+        )
         log.info("gumroad: granted %d credits to %s for sale %s", amount, user_id, external_id)
         return {"event": event, "created": True, "payment_id": payment_id,
                 "user_id": user_id, "credits": amount}
 
     # Refund / cancellation: reverse the original grant, but never below zero.
     if status == "refunded":
-        db.subtract_credits(user_id, _credits_for_product(product_id),
-                            related_id=external_id, reason=f"Gumroad refund {external_id}")
-        log.info("gumroad: reversed credits for refunded sale %s", external_id)
+        try:
+            reversed_now, _bal = db.reverse_payment_credits(
+                PROVIDER, external_id, user_id,
+                fallback_amount=intended_amount,
+                reason=f"Gumroad refund {external_id}",
+            )
+        except ValueError as exc:
+            log.warning("gumroad: reversal skipped for sale %s: %s", external_id, exc)
+            reversed_now = False
+        if reversed_now:
+            log.info("gumroad: reversed credits for refunded sale %s", external_id)
     return {"event": event, "created": True, "payment_id": payment_id,
             "user_id": user_id, "credits": 0}

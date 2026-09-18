@@ -4,14 +4,31 @@ concurrency:
   cancel-in-progress: true
 on:
   workflow_dispatch:
+    inputs:
+      run_production:
+        description: "Build and publish the signed production release (requires release keystore secrets)"
+        type: boolean
+        default: false
+      production_version:
+        description: "Version tag for the production release (e.g. 0.2.0)"
+        type: string
+        required: false
   push:
     branches: [main]
     paths: ["mobile-android/**", ".github/workflows/android-apk.yml"]
+
+# Publication is fail-closed: the preview release only runs when BOTH the build
+# and the on-emulator interface checks succeed. A failing interface test blocks
+# publication (job "publish" needs both jobs; a red "interface-checks" job
+# never reaches it).
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
-      contents: write
+      contents: read
+    outputs:
+      versionname: ${{ steps.meta.outputs.versionname }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -20,35 +37,29 @@ jobs:
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v4
         with:
+          # Maintained pinned Gradle; the committed wrapper (gradle/wrapper/gradle-wrapper.properties
+          # + checksum-verified gradle-wrapper.jar) is authoritative for local builds.
           gradle-version: "8.11.1"
-      - uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: clpz-preview-signing-v1
-      - name: Build debug APK
+      - name: Build debug APK (no publication)
         working-directory: mobile-android
         env:
           SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || vars.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           WEBSITE_URL: https://clpzit.vercel.app
         run: gradle :app:assembleDebug
+      - name: Record build metadata
+        id: meta
+        run: |
+          echo "versionname=$(grep -o 'versionName = \"[^\"]*\"' mobile-android/app/build.gradle.kts | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
       - name: Name installable APK
         run: cp mobile-android/app/build/outputs/apk/debug/app-debug.apk CLPZ-Mobile.apk
       - uses: actions/upload-artifact@v4
         with:
           name: CLPZ-Mobile-debug
           path: CLPZ-Mobile.apk
-      - name: Publish mobile preview release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: mobile-latest
-          name: CLPZ Mobile preview
-          prerelease: true
-          body: Install the Android preview, sign in with the same CLPZ account, and edit or export clips on your device.
-          files: CLPZ-Mobile.apk
+
   interface-checks:
     runs-on: ubuntu-latest
-    needs: build
     timeout-minutes: 25
     permissions:
       contents: read
@@ -90,3 +101,93 @@ jobs:
             ui-screenshots
             mobile-android/app/build/reports/androidTests
             mobile-android/app/build/outputs/androidTest-results
+
+  # Preview channel: debug-signed, published only after green build + interface checks.
+  publish:
+    runs-on: ubuntu-latest
+    needs: [build, interface-checks]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: CLPZ-Mobile-debug
+      - name: Publish mobile preview release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mobile-latest
+          name: CLPZ Mobile preview
+          prerelease: true
+          body: Install the Android preview, sign in with the same CLPZ account, and edit or export clips on your device. Timeline drafts are fixed start/middle/end windows, not AI moment detection.
+          files: CLPZ-Mobile.apk
+
+  # Production channel: separate, explicit, release-signed. Never runs on push;
+  # requires a manual dispatch with a version tag and release keystore secrets.
+  # The upload signing config activates only when the secret is present, so
+  # debug builds are unaffected.
+  production-release:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_production == true
+    runs-on: ubuntu-latest
+    needs: [build, interface-checks]
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    environment: production-android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+      - name: Decode release keystore
+        env:
+          ANDROID_RELEASE_KEYSTORE_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_B64 }}
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          test -n "$ANDROID_RELEASE_KEYSTORE_B64" || { echo "::error::release keystore secret missing"; exit 1; }
+          echo "$ANDROID_RELEASE_KEYSTORE_B64" | base64 -d > mobile-android/release.keystore
+      - name: Build signed release bundle
+        working-directory: mobile-android
+        env:
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || vars.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          WEBSITE_URL: https://clpzit.vercel.app
+        run: gradle :app:bundleRelease
+      - name: Remove keystore
+        if: always()
+        run: rm -f mobile-android/release.keystore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CLPZ-Mobile-release
+          path: mobile-android/app/build/outputs/bundle/release/app-release.aab
+      - name: Publish production release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.meta.outputs.versionname || inputs.production_version }}
+          name: CLPZ Mobile ${{ inputs.production_version }}
+          prerelease: false
+          body: Production CLPZ Mobile build. Signed upgrades preserve local projects and authentication.
+          files: mobile-android/app/build/outputs/bundle/release/app-release.aab
+
+  build-jvm-unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+      - name: Run JVM unit tests
+        working-directory: mobile-android
+        run: gradle :app:testDebugUnitTest

@@ -40,7 +40,14 @@ def _get_client():
 
 
 def send_verification_email(to_email: str, code: str, purpose: str = "signup") -> bool:
-    """Send a verification code email. Returns True if sent successfully."""
+    """Send a verification code email. Returns True ONLY if actually sent.
+
+    Task 04: the console fallback is permitted ONLY when CLPZ_DEBUG=1, and
+    the return value reflects reality — a console print is NOT a delivery,
+    so debug fallback returns False (truthfully) while logging the code for
+    local development. Production without Resend must fail loudly, never
+    report success and never leak codes.
+    """
     client = _get_client()
     
     subject = "CLPZ - Verify your email" if purpose == "signup" else "CLPZ - Password Reset Code"
@@ -57,16 +64,23 @@ def send_verification_email(to_email: str, code: str, purpose: str = "signup") -
     """
     
     if client is None:
-        # Development fallback: log to console
-        logger.info(f"[CLPZ EMAIL] To: {to_email} | Subject: {subject} | Code: {code}")
+        # Debug-only console fallback: the code never appears in output when
+        # debug is off, and this path never reports successful delivery.
+        if os.getenv("CLPZ_DEBUG", "0") != "1":
+            logger.error(
+                "Email delivery unavailable (RESEND_API_KEY not configured) "
+                "and CLPZ_DEBUG=0 — no fallback is permitted in production. "
+                "Code NOT delivered to %s.", to_email)
+            return False
+        logger.info("[CLPZ EMAIL debug] code printed to console (NOT emailed)")
         sep = "=" * 50
         print()
         print(sep)
-        print("CLPZ VERIFICATION CODE")
+        print("CLPZ VERIFICATION CODE (debug fallback — not delivered by email)")
         print("To:", to_email)
         print("Code:", code)
         print(sep)
-        return True
+        return False  # honest: nothing was delivered
     
     try:
         client.Emails.send({
@@ -78,9 +92,8 @@ def send_verification_email(to_email: str, code: str, purpose: str = "signup") -
         logger.info(f"Verification email sent to {to_email}")
         return True
     except Exception as e:
-        logger.error(f"Failed to send verification email to {to_email}: {e}")
-        # Fall back to console
-        logger.info(f"[CLPZ EMAIL FALLBACK] To: {to_email} | Code: {code}")
+        logger.error("Failed to send email to %s: %s", to_email, e)
+        # Never log the code, never fall back in production, never claim success.
         return False
 
 

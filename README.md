@@ -21,10 +21,15 @@ not the clipping workspace, and nothing is processed in the browser.
 | `backend/` | FastAPI server — auth, credits, jobs/pipeline API, serves all frontends |
 | `backend/pipeline/` | yt-dlp download, faster-whisper transcription, ffmpeg rendering |
 | `frontend/` | Vanilla HTML pages: landing (`index.html`), auth, dashboard, admin |
-| `frontend-app/` | React (Vite) app — public landing + auth under `/new/*`; built to `dist/` |
+| `frontend/clpz.html` | **The shipping desktop workspace** served at `/app` |
+| `frontend-app/` | React (Vite) app — landing/auth under `/new/*` (dev surface, not the shipping editor) |
 | `desktop/` | Desktop wrapper (PyWebView) + frozen-app launcher logic |
+| `website/` | Next.js public site (marketing, auth, account, download) — the public product site |
+| `mobile-android/` | Native Android editor (separately labeled preview; on-device only) |
+| `supabase/` | Cloud schema for website/Android identity + future business data |
 | `packaging/` | Windows build/installer scripts; build outputs are git-ignored |
-| `docs/` | `PRODUCTION_CONFIG.md` (env reference), `RELEASE.md` (release strategy) |
+| `docs/` | `ARCHITECTURE.md`, `ADR-0001` (product/architecture contract), `PRODUCTION_CONFIG.md`, `RELEASE.md` |
+| `docs/foundation/` | Implementation plan: audit, 22 task prompts, acceptance matrix, evidence |
 | `deploy/`, `scripts/` | Legacy server deploy helpers (kept for reference) |
 
 ## Development run (no login or credits required)
@@ -40,7 +45,8 @@ cd backend && python -m uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
 Optional dev env: `CLPZ_DEBUG=1` (default, loose limits + dev codes),
-`CLPZ_ADMIN_EMAIL=<email>` marks an account admin. See `docs/PRODUCTION_CONFIG.md`
+`CLPZ_ADMIN_EMAIL=<email>` (legacy admin bootstrap — **known security defect
+F01**, replaced by provisioned admin in task 04). See `docs/PRODUCTION_CONFIG.md`
 for every variable and the production checklist — the packaged app forces
 `CLPZ_DEBUG=0` and stores user data under `%LOCALAPPDATA%\CLPZ\data` (never in
 Program Files).
@@ -74,7 +80,12 @@ live in `packaging/RELEASE_SHA256.txt` and `docs/RELEASE.md`.
   endpoints require the admin account. One idempotency key maps to exactly
   one job, so a retried submission can never double-charge or create a
   duplicate job.
-- **No cloud backend:** authentication, credits and jobs are stored locally
-  in SQLite under the data directory. There is no Supabase or other hosted
-  service dependency; processing (transcription, rendering) runs entirely on
-  the user's machine.
+- **Media never leaves the machine:** processing (download, transcription,
+  rendering, editing) runs locally. There is **no hosted video processing**
+  and no cloud media upload.
+- **Two account systems, deliberately separate:** the desktop app uses local
+  SQLite accounts/credits. The **website and Android app use Supabase** for
+  cloud identity (see `supabase/`); website payments are recorded but **not
+  yet fulfilled or linked to accounts**. No website→desktop session handoff
+  exists yet (documented limitation). See `docs/ARCHITECTURE.md` for the
+  corrected picture and ownership rules.

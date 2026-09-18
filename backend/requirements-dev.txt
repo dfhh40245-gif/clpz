@@ -1,0 +1,7 @@
+# Backend TEST dependencies (install on top of backend/requirements.txt):
+#   pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+# These are never needed to RUN the application — only to test it.
+-c requirements.lock
+pytest
+requests
+httpx

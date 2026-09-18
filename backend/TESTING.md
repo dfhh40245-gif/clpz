@@ -3,44 +3,50 @@
 ## Quick Start
 
 ```bash
+# Full documented check (backend + React + website; Node/npm are required):
+python scripts/check.py
+
+# Focused backend check (explicitly records React/website as skipped):
+python scripts/check.py --fast
+
+# Or directly:
 cd backend
-pip install pytest requests
-python -m pytest tests/ -m "not slow" -v -q
+pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest tests/ -m "not slow" -q
 ```
+
+## Hermetic guarantees (task 02)
+
+- Every run gets a **unique temporary data directory** (`%TEMP%/clpz-tests-<id>/`)
+  and a **unique free port**. Parallel checkouts never collide and no user's
+  real database (`backend/data`, `%LOCALAPPDATA%/CLPZ`) is ever touched.
+- Readiness is an **authenticated HTTP probe** (`/api/auth/me` returns 200/401),
+  not a bare listening-port check — an unrelated listener fails the probe.
+- The spawned server is **always cleaned up**, even on failure.
+- Ledger tests use `CLPZ_TEST_WORKERS=0` (a dedicated `gated_server` fixture)
+  so charges/refunds are observed deterministically. **Refund logic is never
+  disabled** — with zero workers, no job ever starts, so no refund can race.
+- Rate-limit/UX tests run in their own short-lived server (`CLPZ_DEBUG=0`)
+  on their own unique port.
 
 ## Test Commands
 
 ### Fast tests (recommended for development)
 ```bash
-python -m pytest tests/ -m "not slow" -v -q
+python -m pytest tests/ -m "not slow" -q
 ```
-~23 seconds. Runs: auth, credits, admin, pipeline unit, desktop, edge cases (non-network).
 
 ### Full local tests (including network-triggered jobs)
 ```bash
 python -m pytest tests/test_edge_cases.py -v -q
 ```
-~2 minutes. Runs edge case tests that create background YouTube jobs.
+Runs edge case tests that create background YouTube jobs (network-dependent).
 
 ### Slow / E2E tests (requires sufficient RAM)
 ```bash
 python -m pytest tests/test_upload.py::TestUploadEndToEnd -v
 ```
-~20-30 seconds. Upload → transcribe → render → validate MP4. Requires ~2GB free RAM.
-
-### YouTube E2E (requires network + yt-dlp)
-Run manually. Downloads a real YouTube video and processes through the full pipeline.
-
-### By file
-```bash
-python -m pytest tests/test_auth.py -v        # Authentication (19 tests)
-python -m pytest tests/test_credits.py -v     # Credits (9 tests)
-python -m pytest tests/test_admin.py -v       # Admin (13 tests)
-python -m pytest tests/test_pipeline.py -v    # Pipeline unit (9 tests)
-python -m pytest tests/test_desktop.py -v     # Desktop (19 tests)
-python -m pytest tests/test_edge_cases.py -v  # Edge cases (15 tests)
-python -m pytest tests/test_upload.py -v      # Upload (5 tests)
-```
+Upload → transcribe → render → validate MP4. Requires ~2GB free RAM.
 
 ### By category
 ```bash
@@ -50,32 +56,13 @@ python -m pytest -m "integration" # Tests requiring the full server
 python -m pytest -m "network"     # Tests requiring external network
 ```
 
-## Test Count
-
-| File | Tests | Category |
-|------|-------|----------|
-| test_auth.py | 19 | integration |
-| test_credits.py | 9 | integration |
-| test_admin.py | 13 | integration |
-| test_pipeline.py | 9 | fast + integration |
-| test_desktop.py | 19 | integration |
-| test_edge_cases.py | 15 | fast + slow |
-| test_upload.py | 5 | integration + slow |
-| **Total** | **89** | |
-
-- Fast suite: **80 tests, ~23 seconds**
-- Slow suite: **8 tests, ~2 minutes**
-
-## CI
-
-GitHub Actions runs the fast suite on every push/PR.
-See `.github/workflows/ci.yml`.
-
 ## Notes
 
-- Tests use a dedicated server on port 8100 with isolated SQLite data
+- Tests spin up their own server on a unique port with an isolated SQLite
+  data dir under the system temp directory
 - DB is cleaned before and after each test
 - Session-scoped server avoids startup overhead per test
-- `CLPZ_DEBUG=1` enables high rate limits for testing
-- Rate limit test is skipped in debug mode (by design)
-- E2E upload test requires sufficient RAM (~2GB free) for Whisper
+- `CLPZ_DEBUG=1` enables high rate limits for testing; throttling tests
+  spawn a separate `CLPZ_DEBUG=0` server
+- The insufficient-credit test pins `CLPZ_TEST_WORKERS=0` for a known balance
+  (10) and asserts 402 — a refund race is structurally impossible there

@@ -1,8 +1,6 @@
-# CLPZ CI — Fast test suite
-# Runs on every push and PR.
-# Tests the fast suite (auth, credits, admin, pipeline unit, desktop, edge cases).
-# Does NOT run e2e/slow tests (require Whisper + FFmpeg + RAM).
-# $0/month — uses free GitHub Actions runners.
+# CLPZ CI — backend, React, website. No dependency fallbacks (task 02).
+# A failing install FAILS the job; nothing is substituted or hidden.
+# Test configurations never contact live account or payment services.
 
 name: CI
 
@@ -13,9 +11,9 @@ on:
     branches: [main, master]
 
 jobs:
-  fast-tests:
+  backend:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -25,39 +23,47 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
-          cache-dependency-path: backend/requirements*.txt
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
 
       - name: Install ffmpeg
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-      - name: Install dependencies
+      - name: Install dependencies (no fallback)
         run: |
           cd backend
-          pip install --upgrade pip
-          pip install -r requirements.txt 2>/dev/null || pip install fastapi uvicorn requests pydantic
-          pip install pytest
+          python -m pip install --upgrade pip
+          # requirements*.txt apply the committed Python 3.12 lock closure.
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+          python -m pip check
 
-      - name: Python syntax check
+      - name: Doctor (prerequisites)
+        run: python scripts/doctor.py
+
+      - name: Run fast test suite (hermetic: unique temp data dir + port)
+        env:
+          CLPZ_DISABLE_MAINTENANCE: "1"
         run: |
           cd backend
-          python -m py_compile main.py
-          python -m py_compile auth.py
-          python -m py_compile credits.py
-          python -m py_compile database.py
-          python -m py_compile config.py
-          python -m py_compile jobs.py
-          python -m py_compile email_service.py
+          python -m pytest tests -m "not slow" -q --tb=short
 
-      - name: Run fast test suite
-        run: |
-          cd backend
-          python -m pytest tests/ -m "not slow" -v --tb=short
+      - name: Upload test evidence on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-failure
+          path: |
+            /tmp/clpz-tests-*/
+            backend/test_data/
+          if-no-files-found: ignore
+          retention-days: 7
 
-  frontend:
+  frontend-app:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -69,17 +75,42 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend-app/package-lock.json
 
-      - name: Install dependencies
-        run: |
-          cd frontend-app
-          npm ci || npm install
+      - name: Install dependencies (npm ci, no fallback)
+        run: npm --prefix frontend-app ci
 
       - name: Build React app
-        run: |
-          cd frontend-app
-          npm run build
+        run: npm --prefix frontend-app run build
 
       - name: Run frontend regression tests
-        run: |
-          cd frontend-app
-          npm test
+        run: npm --prefix frontend-app test
+
+      - name: Lint React app
+        run: npm --prefix frontend-app run lint
+
+  website:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies (npm ci, no fallback)
+        run: npm --prefix website ci
+
+      - name: Build website
+        run: npm --prefix website run build
+        env:
+          # Staging/test values only — never production secrets in CI.
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: test-anon-key
+        continue-on-error: false
+
+      - name: Lint website
+        run: npm --prefix website run lint

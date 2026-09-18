@@ -210,9 +210,55 @@ def test_upload_dedupe_same_key(clean_server):
     assert bal == 9, f"expected a single upload charge (10->9), got {bal}"
 
 
+def test_upload_replay_checks_content_and_cleans_staging(clean_server):
+    """R04: the real multipart path reads and hashes every replay body.
+
+    Two valid, distinct MP4 files deliberately use the same client filename,
+    options, and idempotency key.  Only byte-identical retry may return the
+    original job; changed media must receive 409 and no ``.part`` file may
+    remain in the temporary staging area.
+    """
+    first_video = FIXTURE
+    changed_video = FIXTURE.with_name("test_video.mp4")
+    if not first_video.exists() or not changed_video.exists():
+        pytest.skip("distinct video fixtures missing")
+
+    session = requests.Session()
+    session.post(f"{clean_server.base_url}/api/auth/signup",
+                 json={"email": _email("r04"), "password": "pass123456"})
+    key = f"r04-{uuid.uuid4().hex}"
+
+    def upload(path):
+        with path.open("rb") as media:
+            return session.post(
+                f"{clean_server.base_url}/api/jobs/upload",
+                files={"file": ("same.mp4", media, "video/mp4")},
+                data={"max_clips": "1", "idempotency_key": key},
+                timeout=30,
+            )
+
+    original = upload(first_video)
+    assert original.status_code == 200, original.text
+    retry = upload(first_video)
+    assert retry.status_code == 200, retry.text
+    assert retry.json()["job_id"] == original.json()["job_id"]
+
+    changed = upload(changed_video)
+    assert changed.status_code == 409, changed.text
+    assert "different upload" in changed.json()["detail"].lower()
+
+    staging = clean_server._data_dir / ".upload-staging"
+    assert not list(staging.glob("*.part")), "replayed upload left staged media behind"
+    balance = session.get(f"{clean_server.base_url}/api/credits/balance").json()["balance"]
+    assert balance == 9, "changed replay must not be charged"
+
+
 # ── /api/jobs/clear authorization ─────────────────────────────────
 
 def test_clear_requires_admin(clean_server):
+    """Admin authorization uses the provisioned role (task 04), not an email
+    match: a plain signup of 'admin@test.com' grants nothing until the role
+    is provisioned server-side (what the trusted CLI does)."""
     r = requests.post(f"{clean_server.base_url}/api/jobs/clear")
     assert r.status_code == 401, f"anonymous clear should 401, got {r.status_code}"
     user = requests.Session()
@@ -220,9 +266,23 @@ def test_clear_requires_admin(clean_server):
               json={"email": _email("u"), "password": "pass123456"})
     r = user.post(f"{clean_server.base_url}/api/jobs/clear")
     assert r.status_code == 403, f"non-admin clear should 403, got {r.status_code}"
+    import sqlite3
     admin = requests.Session()
-    admin.post(f"{clean_server.base_url}/api/auth/signup",
-               json={"email": "admin@test.com", "password": "adminpass123"})
+    r_signup = admin.post(f"{clean_server.base_url}/api/auth/signup",
+                          json={"email": "admin@test.com", "password": "adminpass123"})
+    # Before provisioning, this account must NOT administer (F01 regression).
+    r_pre = admin.post(f"{clean_server.base_url}/api/jobs/clear")
+    assert r_pre.status_code == 403, (
+        f"unprovisioned admin@test.com cleared jobs: {r_pre.status_code}")
+    # Trusted provisioning path (server-side, like scripts/provision_admin.py).
+    db_path = clean_server._data_dir / "clpz.db"
+    uid = r_signup.json()["user"]["id"]
+    conn = sqlite3.connect(str(db_path), timeout=10)
+    try:
+        conn.execute("UPDATE users SET role = 'admin' WHERE id = ?", (uid,))
+        conn.commit()
+    finally:
+        conn.close()
     r = admin.post(f"{clean_server.base_url}/api/jobs/clear")
     assert r.status_code == 200, f"admin clear should 200, got {r.status_code}: {r.text}"
 
@@ -501,7 +561,9 @@ def test_deleted_job_not_rehydrated_after_restart(tmp_path):
         s.post(f"{base}/api/auth/signup",
                json={"email": "admin@test.com", "password": "adminpass123"})
         jobs_list = s.get(f"{base}/api/jobs").json()
-        assert all(j["id"] != jid for j in jobs_list), \
+        # Task 19: list responses are now paginated summaries {"projects": [...]}
+        rows = jobs_list.get("projects", jobs_list) if isinstance(jobs_list, dict) else jobs_list
+        assert all(j["id"] != jid for j in rows), \
             "deleted job was rehydrated from SQLite as a ghost project"
         assert not (tmp_path / jid).exists(), "ghost job directory was recreated"
     finally:

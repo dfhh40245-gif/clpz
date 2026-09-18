@@ -17,18 +17,81 @@ _EMAIL_RE = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
 _MAX_EMAIL_LEN = 254  # RFC 5321
 
 
+# ---- Versioned password hashing (task 04) ---------------------------
+# Format: "pbkdf2_sha256$<iterations>$<salt_hex>$<hash_hex>" (OWASP-style
+# modular format). Legacy hashes are bare "<hash_hex>" with a separate salt
+# column at 100_000 iterations; verification is transparent and every
+# successful legacy verification is upgraded in place (migration-on-success).
+
+PBKDF2_ITERATIONS = 600_000  # OWASP 2023+ guidance for PBKDF2-SHA256
+MAX_PASSWORD_LEN = 128       # bound input length before hashing
+_LEGACY_ITERATIONS = 100_000
+
+
 def _hash_password(password: str, salt: str | None = None) -> tuple[str, str]:
-    """Hash a password with PBKDF2-SHA256. Returns (hash, salt)."""
+    """Hash a password with PBKDF2-SHA256 at the current work factor.
+
+    Returns (stored_value, salt) where stored_value is the versioned string
+    ``pbkdf2_sha256$iterations$salt$hash``.
+    """
+    if len(password) > MAX_PASSWORD_LEN:
+        raise ValueError(f"Password must be at most {MAX_PASSWORD_LEN} characters.")
     if salt is None:
         salt = secrets.token_hex(16)
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000)
-    return dk.hex(), salt
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), PBKDF2_ITERATIONS)
+    return f"pbkdf2_sha256${PBKDF2_ITERATIONS}${salt}${dk.hex()}", salt
 
 
 def _verify_password(password: str, stored_hash: str, salt: str) -> bool:
-    """Verify a password against stored hash."""
-    computed, _ = _hash_password(password, salt)
+    """Verify against a versioned or legacy hash. Returns True on match.
+
+    Legacy format (bare hex, 100k iterations) is still accepted; callers use
+    ``needs_hash_upgrade`` to rehash on successful login.
+    """
+    if len(password) > MAX_PASSWORD_LEN:
+        return False
+    if stored_hash.startswith("pbkdf2_sha256$"):
+        try:
+            _algo, iterations_s, hash_salt, hash_hex = stored_hash.split("$", 3)
+            iterations = int(iterations_s)
+        except ValueError:
+            return False
+        computed = hashlib.pbkdf2_hmac(
+            "sha256", password.encode(), hash_salt.encode(), iterations).hex()
+        return secrets.compare_digest(computed, hash_hex)
+    # Legacy bare-hash format
+    computed, _ = _hash_password_legacy(password, salt)
     return secrets.compare_digest(computed, stored_hash)
+
+
+def _hash_password_legacy(password: str, salt: str) -> tuple[str, str]:
+    """Legacy verification path: bare hash at 100k iterations (no versioning)."""
+    if salt is None:
+        salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), _LEGACY_ITERATIONS)
+    return dk.hex(), salt
+
+
+def needs_hash_upgrade(stored_hash: str) -> bool:
+    """True when a stored hash uses the legacy format or an older work factor."""
+    if not stored_hash.startswith("pbkdf2_sha256$"):
+        return True
+    try:
+        iterations = int(stored_hash.split("$")[1])
+    except (ValueError, IndexError):
+        return True
+    return iterations < PBKDF2_ITERATIONS
+
+
+def rehash_password(password: str, stored_hash: str, salt: str) -> tuple[str, str] | None:
+    """Rehash an already-verified password at the current work factor.
+
+    Returns (new_stored_hash, new_salt) or None when no upgrade is needed.
+    Only call after a successful verification of ``password``.
+    """
+    if not needs_hash_upgrade(stored_hash):
+        return None
+    return _hash_password(password)
 
 
 def create_user(email: str, password: str, display_name: str = "") -> dict:
@@ -51,13 +114,25 @@ def create_user(email: str, password: str, display_name: str = "") -> dict:
 
 
 def authenticate_user(email: str, password: str) -> dict | None:
-    """Authenticate and return user dict, or None if invalid."""
+    """Authenticate and return user dict, or None if invalid.
+
+    A successful verification against a legacy/older hash transparently
+    upgrades the stored hash to the current versioned format.
+    """
     email = email.strip().lower()
     pw_data = db.get_user_password(email)
     if not pw_data:
         return None
-    if not _verify_password(password, pw_data["password_hash"], pw_data["password_salt"]):
+    stored_hash = pw_data["password_hash"]
+    if not _verify_password(password, stored_hash, pw_data["password_salt"]):
         return None
+    upgraded = rehash_password(password, stored_hash, pw_data["password_salt"])
+    if upgraded is not None:
+        try:
+            db.set_password(pw_data["id"], upgraded[0], upgraded[1])
+        except Exception:
+            # Upgrade is best-effort; verification already succeeded.
+            pass
     user = db.get_user_by_email(email)
     return user
 
@@ -91,6 +166,8 @@ def set_password(user_id: str, new_password: str) -> None:
     """Set a new password for a user by ID."""
     if len(new_password) < 6:
         raise ValueError("Password must be at least 6 characters.")
+    if len(new_password) > MAX_PASSWORD_LEN:
+        raise ValueError(f"Password must be at most {MAX_PASSWORD_LEN} characters.")
     pwd_hash, salt = _hash_password(new_password)
     db.set_password(user_id, pwd_hash, salt)
 

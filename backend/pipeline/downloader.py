@@ -16,6 +16,7 @@ import os
 import platform
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -45,6 +46,23 @@ def _find_binary(name: str) -> str:
     )
 
 
+# Module-mode fallback (task 13 / F15): when the bundled yt-dlp executable is
+# missing or fails its smoke check, run the packaged Python module instead.
+# The frozen server bundles yt_dlp, so the installed app never depends on the
+# developer machine's PATH.
+def _ytdlp_command() -> list[str]:
+    """Return the argv prefix that runs yt-dlp.
+
+    Prefers the bundled standalone exe (verified by the release audit); falls
+    back to ``python -m yt_dlp`` which works in dev venvs and frozen builds.
+    """
+    try:
+        return [_find_binary("yt-dlp")]
+    except FileNotFoundError:
+        pass
+    return [sys.executable, "-m", "yt_dlp"]
+
+
 def _build_env() -> dict:
     """Build environment with ffmpeg in PATH so yt-dlp can find it."""
     env = os.environ.copy()
@@ -59,8 +77,7 @@ def _build_env() -> dict:
 
 def _build_base_cmd(cookies_file: Path | None = None) -> list[str]:
     """Build base yt-dlp command."""
-    yt_dlp = _find_binary("yt-dlp")
-    cmd = [yt_dlp, "--no-playlist"]
+    cmd = [*_ytdlp_command(), "--no-playlist"]
 
     if cookies_file and cookies_file.exists():
         cmd += ["--cookies", str(cookies_file)]

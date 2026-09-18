@@ -11,18 +11,20 @@ import uuid
 import os
 import subprocess
 import sys
+import tempfile
 import time
 import socket
+from pathlib import Path
 
 import pytest
 import requests
 
-from .conftest import TestServer
+from .conftest import TestServer, _free_port
 
 
 @pytest.fixture(scope="module")
 def server():
-    s = TestServer(port=8123)
+    s = TestServer(port=_free_port())
     s.start()
     yield s
     s.stop()
@@ -41,11 +43,16 @@ def _signup(base, email):
 
 def test_reset_endpoint_blocked_in_debug():
     """With CLPZ_DEBUG unset, /api/jobs/reset must 404 (not wipe jobs)."""
-    port = 8124
+    port = _free_port()
     env = os.environ.copy()
-    env["CLIPFORGE_DATA"] = "test_data"
+    env["CLIPFORGE_DATA"] = str(Path(tempfile.mkdtemp(prefix="clpz-sec-")))
     env["CLPZ_DEBUG"] = "0"
     env["CLPZ_ADMIN_EMAIL"] = "admin@test.com"
+    # Production server requires the capability token for state-changing
+    # routes (task 03); this check targets the reset route specifically, so
+    # send a valid capability header and expect the ROUTE's 404, not the
+    # boundary's 403.
+    env["CLPZ_CAPABILITY_TOKEN"] = "sec-probe-token"
     proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "main:app", "--host", "127.0.0.1",
          "--port", str(port), "--log-level", "error"],
@@ -62,7 +69,8 @@ def test_reset_endpoint_blocked_in_debug():
                 break
             except OSError:
                 time.sleep(0.5)
-        r = requests.post(f"http://127.0.0.1:{port}/api/jobs/reset", timeout=5)
+        r = requests.post(f"http://127.0.0.1:{port}/api/jobs/reset", timeout=5,
+                          headers={"X-CLPZ-Capability": "sec-probe-token"})
         assert r.status_code == 404
         # Production over plain-HTTP loopback: the cookie must NOT force
         # Secure (strict clients would refuse to send it, breaking sessions).

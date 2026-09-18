@@ -55,9 +55,19 @@ CLIP_MAX_SECONDS = float(os.getenv("CLIP_MAX_SECONDS", "60"))
 # Clips rendered in parallel. 1 for low-RAM machines (8GB), 2 for 16GB+.
 RENDER_WORKERS = int(os.getenv("RENDER_WORKERS", "1"))
 # Absolute deadline for a single job (download + transcribe + render).
-# Whisper runs in-process, so this is the safety net that turns a hung job
-# into a controlled failure even when no subprocess can be interrupted.
+# Whisper runs in a supervised subprocess (R02), so a hung transcription is
+# terminated at TRANSCRIBE_DEADLINE_SECONDS; the job deadline remains as a
+# backstop for stages that are not individually supervised.
 JOB_TIMEOUT_SECONDS = float(os.getenv("JOB_TIMEOUT_SECONDS", "3600"))
+# R02: run Whisper in a supervised child process so a hung model is killed at
+# a hard deadline instead of holding a worker slot forever. Set to "0" to
+# fall back to the legacy in-process call (used by the hermetic test suite,
+# which stubs transcription in-process).
+TRANSCRIBE_SUPERVISED = os.getenv("TRANSCRIBE_SUPERVISED", "1").strip().lower() not in ("0", "false", "no", "off")
+# Hard deadline for one supervised transcription stage. Applies whether the
+# child produced partial output or hung silently: at expiry the child is
+# force-killed and the job fails with TRANSCRIBE_TIMEOUT.
+TRANSCRIBE_DEADLINE_SECONDS = float(os.getenv("TRANSCRIBE_DEADLINE_SECONDS", "3600"))
 # How often background maintenance (session/idempotency/cancel-event pruning)
 # runs.  A restart never removes completed projects automatically.
 MAINTENANCE_INTERVAL_SECONDS = int(os.getenv("MAINTENANCE_INTERVAL_SECONDS", "3600"))

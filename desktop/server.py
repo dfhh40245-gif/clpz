@@ -101,10 +101,15 @@ class BackendServer:
         env["PYTHONPATH"] = str(self._backend_dir)
         # Desktop mode is a local, single-user product: production security
         # settings, isolated data dir (never the backend's default ./data).
-        env.setdefault("CLPZ_DEBUG", "0")
+        env["CLPZ_DEBUG"] = "0"
+        env.pop("CLPZ_REQUIRE_CAPABILITY", None)  # keep the local gate on
         data_dir = self._data_dir()
         data_dir.mkdir(parents=True, exist_ok=True)
         env["CLIPFORGE_DATA"] = str(data_dir)
+        # Per-launch capability token (task 03): fresh every launch, passed to
+        # the child only; the UI gets it via the served /app page.
+        import secrets as _secrets
+        env["CLPZ_CAPABILITY_TOKEN"] = _secrets.token_urlsafe(32)
 
         # Add bundled FFmpeg to PATH if available
         ffmpeg_dir = _find_ffmpeg_dir()

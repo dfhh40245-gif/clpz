@@ -3,17 +3,22 @@
 Every credit mutation goes through this module. Credits are stored in
 SQLite via database.py with an immutable transaction log.
 
-All operations are protected by the database lock to prevent
-double-spending and race conditions.
+Atomicity (task 08):
+- Each bonus/charge/refund is ONE database transaction that includes its
+  own duplicate guard, so concurrent callers can never both mutate.
+- check_and_charge persists the cached replay result in the SAME commit
+  as the charge, so a crash can never leave a charge without a replay
+  record (or vice versa).
 
-Idempotency:
-- check_and_charge accepts an idempotency_key parameter
-- If the same key is used twice, the second call returns the cached result
-- This prevents duplicate charges from double-clicks or network retries
+Scope note (decision register D2/D3): these local credits are the
+desktop's development/legacy accounting. They are NOT authoritative paid
+cloud entitlements; cloud grants live in the Supabase schema (task 14/15).
 
 Refund safety:
-- Each refund is tied to a specific related_id (job_id)
-- A job can only be refunded once — duplicate refunds are prevented
+- Each refund is tied to a specific related_id (job id).
+- refund() performs the guard and the mutation in one transaction
+  (db.refund_once): a job can only be refunded once, even under
+  concurrency or repeated calls.
 """
 from __future__ import annotations
 
@@ -30,19 +35,15 @@ SIGNUP_BONUS = int(config.SIGNUP_BONUS)
 def ensure_signup_bonus(user_id: str) -> int:
     """Grant the signup bonus exactly once. Returns current balance.
 
-    Idempotent: calling multiple times for the same user only grants
-    the bonus once.
+    Atomic: the eligibility check and the grant commit as one transaction
+    (db.grant_signup_bonus_once), so concurrent calls for the same user
+    grant the bonus exactly once.
     """
-    if db.has_signup_bonus(user_id):
-        return db.get_credit_balance(user_id)
-
     # Check if user exists
     if db.get_user_by_id(user_id) is None:
         return 0
 
-    # Grant bonus
-    new_bal = db.add_credits(user_id, SIGNUP_BONUS, "signup_bonus",
-                             f"Welcome! {SIGNUP_BONUS} free clips.")
+    _, new_bal = db.grant_signup_bonus_once(user_id, SIGNUP_BONUS)
     return new_bal
 
 
@@ -59,43 +60,36 @@ def check_and_charge(user_id: str, amount: int, related_id: str = "",
     If balance is insufficient, no deduction occurs and success=False.
 
     If idempotency_key is provided and was already used, returns the
-    cached result without deducting again.
+    cached result without deducting again. The cached result is stored in
+    the same transaction as the charge itself.
     """
-    # Check idempotency
+    # Replay path: a completed operation returns its original result.
     if idempotency_key:
         cached = db.check_idempotency(idempotency_key)
         if cached is not None:
             return cached.get("success", False), cached.get("remaining", 0)
 
-    success, remaining = db.check_and_charge(user_id, amount, related_id=related_id)
-
-    # Save idempotency result
     if idempotency_key:
-        db.save_idempotency(
-            idempotency_key, user_id, "forge",
-            {"success": success, "remaining": remaining}
+        success, remaining = db.check_and_charge_idempotent(
+            user_id, amount, related_id=related_id,
+            key=idempotency_key, operation="forge",
         )
+        return success, remaining
 
+    success, remaining = db.check_and_charge(user_id, amount, related_id=related_id)
     return success, remaining
 
 
 def refund(user_id: str, amount: int, related_id: str = "", reason: str = "") -> int:
     """Refund credits (e.g. on pipeline failure). Returns new balance.
 
-    Safety: If related_id is provided, checks if a refund was already
-    issued for that related_id. Prevents double refunds.
+    Atomic per related_id: the duplicate-refund guard and the mutation are
+    one transaction (db.refund_once), so duplicate or concurrent refund
+    calls return the correct balance without exceptions and never refund
+    twice.
     """
-    if amount <= 0:
-        return get_credit_balance(user_id)
-
-    # Prevent double refund: check if we already refunded for this related_id
-    if related_id:
-        existing_refund = db.has_refund_for_job(related_id)
-        if existing_refund:
-            # Already refunded — return current balance without refunding again
-            return get_credit_balance(user_id)
-
-    return db.refund_credits(user_id, amount, related_id=related_id, reason=reason)
+    _, new_bal = db.refund_once(user_id, amount, related_id=related_id, reason=reason)
+    return new_bal
 
 
 def add_credits(user_id: str, amount: int, txn_type: str = "purchase",
@@ -107,3 +101,13 @@ def add_credits(user_id: str, amount: int, txn_type: str = "purchase",
 def get_transactions(user_id: str, limit: int = 50) -> list[dict]:
     """Return recent transactions for a user (newest first)."""
     return db.get_transactions(user_id, limit=limit)
+
+
+def reconcile() -> dict:
+    """Reconcile every ledger against its balance (task 08 acceptance).
+
+    For each user with credit rows: balance must equal the sum of that
+    user's transaction amounts (subscriptions are out of scope locally).
+    Returns a report dict with per-user deltas and an overall ok flag.
+    """
+    return db.reconcile_ledger()

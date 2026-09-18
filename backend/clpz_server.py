@@ -153,4 +153,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # R02: the pipeline spawns a supervised transcription child via
+    # multiprocessing spawn. In a frozen exe the child re-executes this
+    # entry point, so freeze_support() must run before anything else —
+    # otherwise the spawned child would boot the whole server again.
+    import multiprocessing
+
+    multiprocessing.freeze_support()
     main()
