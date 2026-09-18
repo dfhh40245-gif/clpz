@@ -4,7 +4,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { NavAuth } from "@/components/nav-auth";
 
 const features = [
-  ["Context before keywords", "A sentence can sound punchy and still make no sense alone. CLPZ scores the setup, hook, payoff, and standalone clarity together."],
+  ["Context before keywords", "A sentence can sound punchy and still make no sense alone. CLPZ reads the transcript for complete ideas, not just punchy lines."],
   ["An editor in the loop", "Every suggestion remains editable. Move the cut, fix a caption, change the crop, or restore the original without changing tools."],
   ["Local by design", "Video processing happens in the desktop app on your machine. The website handles the product, purchase, and trusted downloads."],
 ];
@@ -43,7 +43,7 @@ export default function Home() {
               <article className="moment selected"><strong>01</strong><div><b>The mistake that changed the launch</b><small>00:14 — 00:56</small></div><mark>9.2</mark></article>
               <article className="moment"><strong>02</strong><div><b>What we learned in week one</b><small>04:18 — 05:02</small></div><mark>8.7</mark></article>
               <article className="moment"><strong>03</strong><div><b>The advice we ignored</b><small>09:31 — 10:04</small></div><mark>8.1</mark></article>
-              <div className="analysis"><span>Context</span><span>Hook</span><span>Payoff</span></div>
+              <div className="analysis"><span>Context</span><span>Clarity</span><span>Payoff</span></div>
             </div>
           </div>
           <div className="timeline"><div className="timecode"><span>00:00</span><span>00:15</span><span>00:30</span><span>00:45</span></div><div className="track">{Array.from({length:12}).map((_,i)=><i key={i}/>)}</div><div className="caption-track"><b>the part</b><b>nobody</b><b>tells you</b><b className="active">before</b><b>you start</b></div><div className="playhead" /></div>
@@ -58,8 +58,8 @@ export default function Home() {
       <header className="section-heading showcase-heading"><div><p className="section-index">02 / PRODUCT SHOWCASE</p><h2>From full episode<br />to finished short.</h2></div><p>Drop in one source. CLPZ finds complete moments, opens them in a real editor, and keeps every decision reversible.</p></header>
 
       <article className="showcase-row">
-        <div className="showcase-copy"><span className="showcase-number">01</span><p className="section-index">MOMENT DETECTION</p><h3>It reads for the whole idea.</h3><p>CLPZ checks context, completeness, hook strength, payoff, emotional intensity, and whether the moment makes sense without the rest of the video.</p><div className="tag-cloud"><span>Context</span><span>Hook strength</span><span>Payoff</span><span>Standalone clarity</span></div></div>
-        <div className="score-board"><div className="score-head"><div><b>“the moment everything clicked”</b><small>24:41 — 25:23 · 0:42</small></div><strong>9.4</strong></div>{[["Hook","88%","8.8"],["Context","94%","9.4"],["Completeness","97%","9.7"],["Payoff","91%","9.1"]].map(([label,width,value])=><div className="metric" key={label}><span>{label}</span><div><i style={{width}}/></div><b>{value}</b></div>)}<small className="score-note">Illustrative analysis</small></div>
+        <div className="showcase-copy"><span className="showcase-number">01</span><p className="section-index">MOMENT DETECTION</p><h3>It reads for the whole idea.</h3><p>CLPZ checks context, completeness, pacing, and whether the moment makes sense without the rest of the video.</p><div className="tag-cloud"><span>Context</span><span>Clarity</span><span>Payoff</span><span>Standalone clarity</span></div></div>
+        <div className="score-board"><div className="score-head"><div><b>“the moment everything clicked”</b><small>24:41 — 25:23 · 0:42</small></div><strong>9.4</strong></div>{[["Clarity","88%","8.8"],["Context","94%","9.4"],["Completeness","97%","9.7"],["Payoff","91%","9.1"]].map(([label,width,value])=><div className="metric" key={label}><span>{label}</span><div><i style={{width}}/></div><b>{value}</b></div>)}<small className="score-note">Illustrative analysis</small></div>
       </article>
 
       <article className="showcase-row reverse">
@@ -68,7 +68,7 @@ export default function Home() {
       </article>
 
       <article className="showcase-row">
-        <div className="showcase-copy"><span className="showcase-number">03</span><p className="section-index">HOOKS + BATCH</p><h3>Sharpen the opening. Keep the meaning.</h3><p>CLPZ can pull a stronger opening from the same clip, then process the rest of the episode while showing the real stage for every candidate.</p><div className="hook-compare"><div><small>ORIGINAL</small><p>“So, today I kind of wanted to talk about…”</p></div><div><small>SUGGESTED</small><p>“Nobody tells you this before you start.”</p></div></div></div>
+        <div className="showcase-copy"><span className="showcase-number">03</span><p className="section-index">BATCH PROCESSING</p><h3>Queue the episode. Keep working.</h3><p>Send the rest of the episode through the pipeline and watch every candidate move through real stages — transcription, analysis, rendering — as each clip finishes.</p></div>
         <div className="batch-board">{[["01","Complete","0:58"],["02","Complete","1:04"],["03","Rendering","0:41"],["04","Transcribing","0:12"]].map(([num,state,time],index)=><div className="batch-item" key={num}><div className={`batch-thumb batch-${index}`}><span>CLIP {num}</span></div><p className={state==="Complete"?"done":"working"}>{state==="Complete"?"✓ ":"• "}{state}</p><small>{time}</small></div>)}</div>
       </article>
     </section>

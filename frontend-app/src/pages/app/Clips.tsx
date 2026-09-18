@@ -95,7 +95,6 @@ export default function Clips() {
             <div className="p-6 border-l border-clpz-border">
               <Badge variant="accent">Rendered clip</Badge>
               <h2 className="mt-3.5 text-xl tracking-tight font-semibold">{selectedClip.title || `Clip ${selectedClip.index + 1}`}</h2>
-              <p className="mt-1.5 text-sm text-clpz-text-secondary leading-relaxed">{selectedClip.hook || 'Rendered from the selected transcript range.'}</p>
 
               <div className="mt-5 py-5 border-y border-clpz-border space-y-2">
                 {[

@@ -37,7 +37,6 @@ export interface CreditBalance {
 export interface Clip {
   index: number;
   title?: string;
-  hook?: string;
   start: number;
   end: number;
   duration?: number;

@@ -256,14 +256,6 @@
   /* captions phone (reused component, larger) */
   .phone-lg{ width:220px; }
 
-  /* hooks */
-  .hook-pair{ margin-top:var(--s10); display:grid; grid-template-columns:1fr 1fr; gap:var(--s5); max-width:760px; }
-  .hook-card{ background:linear-gradient(145deg, var(--panel) 0%, rgba(25,25,28,.5) 100%); border:1px solid var(--border); border-radius:var(--r-lg); padding:var(--s6); transition:border-color .2s ease, box-shadow .2s ease; }
-  .hook-card:hover{ border-color:var(--border-strong); }
-  .hook-card .k{ font-size:11.5px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint); }
-  .hook-card.after .k{ color:var(--accent); }
-  .hook-card p{ margin-top:var(--s3); font-size:15.5px; line-height:1.55; }
-  .hook-card.after{ border-color:rgba(240,160,48,.35); }
 
   /* batch grid */
   .batch-grid{ margin-top:var(--s10); display:grid; grid-template-columns:repeat(4,1fr); gap:var(--s4); }
@@ -325,7 +317,6 @@
     .section-head h2{ font-size:26px; }
     .workflow-grid{ grid-template-columns:1fr; }
     .batch-grid{ grid-template-columns:1fr 1fr; }
-    .hook-pair{ grid-template-columns:1fr; }
     .extract{ padding:var(--s5); }
     .mobile-menu.open{
       display:flex; flex-direction:column; gap:var(--s1); padding:var(--s4) var(--s6) var(--s5);
@@ -437,14 +428,14 @@
     <div class="section-head reveal">
       <div class="eyebrow">Moment detection</div>
       <h2>It's not just finding sentences.</h2>
-      <p>Most auto-clip tools cut on silence or keywords. CLPZ reads for context — whether a moment makes sense without the rest of the video, whether it has a real hook and a payoff, and whether it holds together as its own short story.</p>
+      <p>Most auto-clip tools cut on silence or keywords. CLPZ reads for context — whether a moment makes sense without the rest of the video, and whether it holds together as its own short story.</p>
     </div>
     <div class="feature-row reveal">
       <div>
         <div class="tag-list">
           <span class="tag">Context</span>
           <span class="tag">Completeness</span>
-          <span class="tag">Hook strength</span>
+          <span class="tag">Clarity</span>
           <span class="tag">Payoff</span>
           <span class="tag">Emotional intensity</span>
           <span class="tag">Narrative coherence</span>
@@ -460,7 +451,7 @@
             </div>
             <div class="score-overall">9.4</div>
           </div>
-          <div class="score-row"><span class="label">Hook</span><div class="bar"><i style="width:88%"></i></div><span class="val mono">8.8</span></div>
+          <div class="score-row"><span class="label">Clarity</span><div class="bar"><i style="width:88%"></i></div><span class="val mono">8.8</span></div>
           <div class="score-row"><span class="label">Context</span><div class="bar"><i style="width:94%"></i></div><span class="val mono">9.4</span></div>
           <div class="score-row"><span class="label">Completeness</span><div class="bar"><i style="width:97%"></i></div><span class="val mono">9.7</span></div>
           <div class="score-row"><span class="label">Payoff</span><div class="bar"><i style="width:91%"></i></div><span class="val mono">9.1</span></div>
@@ -537,25 +528,6 @@
   </div>
 </section>
 
-<section class="section">
-  <div class="wrap">
-    <div class="section-head reveal">
-      <div class="eyebrow">Hooks</div>
-      <h2>A stronger opening, without changing what was said.</h2>
-      <p>CLPZ can suggest a sharper opening line pulled from the same clip — never invented, never out of context. Preview it, apply it, or undo it.</p>
-    </div>
-    <div class="hook-pair reveal">
-      <div class="hook-card">
-        <div class="k">Original opening</div>
-        <p>"So, today I kind of wanted to talk about what happened during that first year…"</p>
-      </div>
-      <div class="hook-card after">
-        <div class="k">Suggested hook</div>
-        <p>"Nobody tells you this before you start — and it changed everything."</p>
-      </div>
-    </div>
-  </div>
-</section>
 
 <section class="section">
   <div class="wrap">
