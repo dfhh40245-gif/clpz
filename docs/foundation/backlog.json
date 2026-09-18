@@ -1,0 +1,854 @@
+{
+  "audited_at": "2026-09-17",
+  "baseline_commit": "76e4b0a",
+  "status": "planning foundation; application fixes not implemented",
+  "tasks": [
+    {
+      "id": "01",
+      "slug": "product-contract",
+      "title": "Define one product and architecture contract",
+      "kind": "Foundation",
+      "priority": "First",
+      "deps": [],
+      "files": [
+        "README.md",
+        "docs/PRODUCTION_CONFIG.md",
+        "docs/RELEASE.md",
+        "desktop/app.py",
+        "desktop/frozen_launcher.py",
+        "frontend-app/src/App.tsx",
+        "website/app/page.tsx",
+        "mobile-android/README.md"
+      ],
+      "finding": "The diagram omits Supabase and the packaged launcher. The real pipeline transcribes before candidate analysis. The desktop opens the vanilla /app workspace; the React router only exposes landing/auth/done. Website and Android use Supabase while desktop accounts are SQLite.",
+      "work": [
+        "Document current and intended architectures separately, including entry points, routes, data stores, trust boundaries, and dev versus installed paths.",
+        "Use the conservative baseline: Windows local processing and existing /app workspace are the first release; Next.js is the public site; Supabase owns cloud identity/business data; Android remains a separately labeled preview. Do not implement hosted video processing or migrate UI frameworks in this task.",
+        "Create an architecture decision record and a capabilities matrix: works, incomplete, untested, planned. Correct README and environment documentation against code.",
+        "Record owner decisions for paid feature versus usage-credit model, offline allowance, refund/retry charging, minimum hardware, Android release scope, and supported languages. Do not invent prices or commercially bind a choice. Dependent billing work may use fixtures until decisions are recorded."
+      ],
+      "checks": [
+        "Every diagram box maps to an existing file or an explicitly proposed component.",
+        "The document names one shipping desktop UI and one authoritative store per data category.",
+        "A new contributor can locate all three products and distinguish local anonymous use from cloud account access.",
+        "All unresolved business choices have an owner and identify which later tasks they block."
+      ],
+      "deliver": "Architecture decision record, updated architecture diagram, route/data ownership table, product decisions, and corrected setup overview.",
+      "status": "OPEN",
+      "prompt": "prompts/01-product-contract.md",
+      "evidence": null
+    },
+    {
+      "id": "02",
+      "slug": "reproducible-development",
+      "title": "Make setup and automated checks reproducible",
+      "kind": "Fix + foundation",
+      "priority": "P1",
+      "deps": [
+        "01"
+      ],
+      "files": [
+        "backend/requirements.txt",
+        "requirements_desktop.txt",
+        "backend/tests/conftest.py",
+        "backend/tests/test_credits.py",
+        "backend/TESTING.md",
+        ".github/workflows/ci.yml",
+        "frontend-app/package.json",
+        "website/package.json",
+        "package.json"
+      ],
+      "finding": "python-multipart and test dependencies are absent from the backend manifest; CI suppresses install failures and falls back to other dependencies. Website is not in main CI. The insufficient-credit test starts real failing background downloads and can race refunds.",
+      "work": [
+        "Declare runtime, test, and desktop-build dependencies separately; resolve tested Python 3.12 environments with documented lock/update commands and platform-specific constraints where necessary. Preserve npm lockfiles and use npm ci.",
+        "Add a prerequisite/doctor command and one documented check command. Check Python, Node supported by the actual manifests, FFmpeg/ffprobe/downloader execution, free disk, dependency consistency, model status, and data path without exposing secrets.",
+        "Make tests hermetic: unique temporary data and ports, explicit server readiness and child cleanup, fake downloader/worker for ledger tests. Do not satisfy the insufficient-credit test by disabling legitimate refunds.",
+        "Remove CI dependency fallbacks; include backend checks, React build/tests/lint, website build/lint/tests, and artifact evidence on failure. Test configurations must not contact live account or payment services."
+      ],
+      "checks": [
+        "A clean checkout installs from committed manifests with no extra manual pip packages and passes pip check.",
+        "Force a dependency-install failure and verify CI stops instead of substituting dependencies.",
+        "Credit exhaustion is tested from a known balance with workers controlled; repeat the targeted concurrency tests without refund races.",
+        "A deliberately occupied test port causes a safe failure or isolated alternative; no test reuses or deletes a user's application database."
+      ],
+      "deliver": "Complete manifests/locks, safe test harness, doctor/check scripts, CI updates, and exact fresh-machine commands.",
+      "status": "OPEN",
+      "prompt": "prompts/02-reproducible-development.md",
+      "evidence": null
+    },
+    {
+      "id": "03",
+      "slug": "desktop-api-boundary",
+      "title": "Protect the desktop's local API",
+      "kind": "Fix",
+      "priority": "P0 before wider exposure",
+      "deps": [
+        "01",
+        "02"
+      ],
+      "files": [
+        "backend/main.py",
+        "backend/config.py",
+        "desktop/server.py",
+        "desktop/frozen_launcher.py",
+        "backend/clpz_server.py",
+        "frontend/clpz.html",
+        "frontend-app/src/lib/api.ts"
+      ],
+      "finding": "Anonymous jobs are permitted regardless of debug mode. Probes accepted an untrusted Host and a cancel POST from an untrusted Origin. Loopback binding helps but is not an application authorization boundary.",
+      "work": [
+        "Make local desktop mode explicit on the server and bind it to loopback. Do not silently turn the media backend into a hosted service.",
+        "Validate Host and browser Origin for relevant routes and protect local API access with a per-launch capability. Design its bootstrap so it reaches only the intended UI, is not leaked through URLs/logs, and still supports video/image/range requests.",
+        "Distinguish same-origin browser requests, authenticated cloud calls if any, and native requests with no Origin. CORS alone is insufficient. Keep the private no-account workflow usable.",
+        "Enforce access checks across list/detail/upload/cancel/retry/edit/save/delete/admin routes, including anonymous local jobs and any new routes. Production startup must reject unsupported insecure modes."
+      ],
+      "checks": [
+        "Untrusted Host/Origin mutations fail; missing or stale capability fails; approved same-origin actions work.",
+        "Token rotation invalidates the prior launch, and no token appears in logs or error text.",
+        "Desktop import, video Range playback, thumbnails, export, and restart work with protection enabled.",
+        "No normal launcher binds 0.0.0.0, and the desktop query parameter alone cannot enable privileged behavior."
+      ],
+      "deliver": "Documented local security boundary, launch/UI integration, and production-mode negative and positive regression tests.",
+      "status": "OPEN",
+      "prompt": "prompts/03-desktop-api-boundary.md",
+      "evidence": null
+    },
+    {
+      "id": "04",
+      "slug": "account-security",
+      "title": "Fix local admin and account recovery security",
+      "kind": "Fix",
+      "priority": "P0 for account-enabled use",
+      "deps": [
+        "01",
+        "02",
+        "03"
+      ],
+      "files": [
+        "backend/main.py",
+        "backend/auth.py",
+        "backend/database.py",
+        "backend/email_service.py",
+        "backend/tests/test_admin.py",
+        "backend/tests/test_auth.py"
+      ],
+      "finding": "Registering the configured admin email grants admin access before email verification. Fifteen wrong current-password reset attempts were not throttled. Email fallback prints codes with debug off; local hashing is unversioned PBKDF2-SHA256 at 100,000 iterations.",
+      "work": [
+        "Replace email-string authorization with trusted provisioning of an immutable user ID/role and verified identity. Apply one admin predicate to both admin endpoints and the job-ownership override. Provide a trusted local maintenance/provisioning command, not a public bootstrap route.",
+        "Throttle every password/code verification path by appropriate account and client identifiers; define cooldown and session revocation behavior.",
+        "Use versioned password hashes and a migration-on-success path based on current official password-storage guidance, with bounded input lengths and compatibility tests. If local auth is being retired, disable its exposed routes explicitly and provide a migration plan.",
+        "Permit development code output only with explicit debug settings. Production delivery failures must be surfaced truthfully without leaking codes, provider secrets, or whether an unrelated account exists."
+      ],
+      "checks": [
+        "An attacker registering the configured owner email gets neither admin endpoints nor ownership bypass.",
+        "Verified normal users remain non-admin; only the trusted provisioned identity can administer.",
+        "Repeated reset guesses reach 429; spoofed forwarding headers do not evade limits.",
+        "Old valid passwords still work through migration; debug-off logs/responses contain no reset codes; mail failures do not falsely report successful delivery."
+      ],
+      "deliver": "Admin migration/provisioning instructions, account security fixes, and production-mode auth regression suite.",
+      "status": "OPEN",
+      "prompt": "prompts/04-account-security.md",
+      "evidence": null
+    },
+    {
+      "id": "05",
+      "slug": "pipeline-resume",
+      "title": "Make failed jobs resume safely",
+      "kind": "Fix",
+      "priority": "P1",
+      "deps": [
+        "02"
+      ],
+      "files": [
+        "backend/jobs.py",
+        "backend/main.py",
+        "backend/pipeline/srt_parser.py",
+        "backend/tests/test_remediation.py"
+      ],
+      "finding": "When parse and analyze are completed, _run_pipeline skips assigning transcript but uses it in analyzer.find_clips and caption rendering. A saved-stage probe reproduces UnboundLocalError.",
+      "work": [
+        "Always reconstruct and validate transcript state from persisted SRT/word artifacts when resuming. Treat stage markers as claims requiring valid artifacts.",
+        "Reuse valid completed stages and clips; invalidate only the dependent stages when artifacts are missing, corrupt, or use an incompatible schema.",
+        "Define durable job/attempt/stage transitions and retry response behavior. Preserve successful outputs and cancellation state; reject simultaneous retries for one job.",
+        "Coordinate accounting hooks with tasks 08/09 without inventing a new paid retry policy. Do not solve the crash by blindly rerunning expensive successful work."
+      ],
+      "checks": [
+        "Inject one failure after download, transcription, parsing, analysis, and a partial render; each resume completes or returns a precise recoverable error.",
+        "Missing/invalid words.json, SRT, and source media are handled predictably with no unbound variables.",
+        "Restart an interrupted job and confirm consistent state, stable clip identity, and no duplicate worker.",
+        "Completed clips are not lost and cancelled jobs do not become done accidentally."
+      ],
+      "deliver": "Resume/state contract, artifact validation, retry implementation, and stage-by-stage regression evidence.",
+      "status": "OPEN",
+      "prompt": "prompts/05-pipeline-resume.md",
+      "evidence": null
+    },
+    {
+      "id": "06",
+      "slug": "export-correctness",
+      "title": "Fix mute, speed, trim, and text export",
+      "kind": "Fix",
+      "priority": "P1",
+      "deps": [
+        "02"
+      ],
+      "files": [
+        "backend/main.py",
+        "backend/jobs.py",
+        "backend/pipeline/cutter.py",
+        "backend/tests/test_remediation.py"
+      ],
+      "finding": "A normal real FFmpeg edit passes; muted export returns 500 because validation requires audio; speed 0.25 returns 500 because atempo=0.25 is invalid for the bundled FFmpeg.",
+      "work": [
+        "Make output validation aware of intentionally absent audio without weakening audio requirements for normal renders.",
+        "Compose valid audio-tempo stages across the full accepted 0.25–4 speed range and keep trim semantics on the source timeline.",
+        "Audit text filter quoting for apostrophes, percent signs, backslashes, colons, commas, brackets, Unicode and line breaks; prefer robust text-file/filter construction rather than shell interpolation.",
+        "Render into unique temporary outputs, validate before promotion, clean failed files, and preserve the original. Handle simultaneous exports without writing the same path; later integrate with the bounded worker service."
+      ],
+      "checks": [
+        "Generate a local video with audio; export at 0.25, 0.5, 1, 2, and 4 speed, muted and unmuted.",
+        "ffprobe verifies expected dimensions, codecs, audio presence, and duration within a frame/encoder tolerance; decode actual frames.",
+        "Trim plus speed plus mute plus text succeeds; invalid ranges and nonfinite numbers return 4xx.",
+        "Two exports of the same clip cannot corrupt or overwrite each other's output; cancellation/failure leaves the original intact."
+      ],
+      "deliver": "Correct rendering/validation and fixture-based media tests, including decoded output checks.",
+      "status": "OPEN",
+      "prompt": "prompts/06-export-correctness.md",
+      "evidence": null
+    },
+    {
+      "id": "07",
+      "slug": "transcript-integrity",
+      "title": "Fix chunk overlap and transcript validation",
+      "kind": "Fix",
+      "priority": "P1",
+      "deps": [
+        "02",
+        "05"
+      ],
+      "files": [
+        "backend/pipeline/transcriber.py",
+        "backend/pipeline/srt_parser.py",
+        "backend/pipeline/captions.py",
+        "backend/pipeline/analyzer.py",
+        "backend/tests/test_pipeline.py"
+      ],
+      "finding": "Merging two identical overlapping two-word chunks returns four words and two segments. Language metadata is dropped in _transcribe_chunk. SRT fallback tokenization only recognizes ASCII alphanumerics.",
+      "work": [
+        "Reconcile complete overlap intervals after ordering/alignment; preserve genuine repeated speech rather than globally deduplicating words.",
+        "Carry language/confidence metadata where available and validate every word/segment, not only the first JSON entry.",
+        "Validate finite ordered timestamps, nonnegative durations, source bounds, and SRT millisecond carry. Distinguish precise timings from fallback estimates.",
+        "Support the languages agreed in task 01 in fallback tokenization and font coverage; document unsupported scripts instead of silently producing empty captions."
+      ],
+      "checks": [
+        "Identical overlap produces one copy; jittered overlaps merge; deliberate repeated words remain; empty chunks work.",
+        "Boundary words and segment timing remain ordered and within source duration.",
+        "Malformed later word entries, NaN, reverse timestamps, and Unicode fixtures produce a controlled result.",
+        "A real multi-chunk speech fixture is transcribed and its boundary captions are inspected; synthetic unit tests alone do not certify speech accuracy."
+      ],
+      "deliver": "Transcript schema, overlap algorithm, language handling, and deterministic plus real-fixture checks.",
+      "status": "OPEN",
+      "prompt": "prompts/07-transcript-integrity.md",
+      "evidence": null
+    },
+    {
+      "id": "08",
+      "slug": "atomic-local-ledger",
+      "title": "Make local credit operations atomic",
+      "kind": "Fix",
+      "priority": "P0 before relying on credits",
+      "deps": [
+        "01",
+        "02"
+      ],
+      "files": [
+        "backend/credits.py",
+        "backend/database.py",
+        "backend/jobs.py",
+        "backend/gumroad.py",
+        "backend/tests/test_credits.py",
+        "backend/tests/test_gumroad.py"
+      ],
+      "finding": "Duplicate refund calls raise NameError. Bonus/refund/idempotency checks and mutations span separate calls. Payment recording and credit grant are separate commits; low-disk/retry paths need accounting consistency.",
+      "work": [
+        "Define local credits as development/legacy accounting unless task 01 explicitly requires them; they must not become authoritative paid cloud entitlements.",
+        "Implement operation-key uniqueness and one database transaction per bonus/charge/refund, including the cached replay result. Scope operations to the correct user/job/attempt.",
+        "Specify charge lifecycle and connect all failure paths, including low disk, upload rejection, partial rendering, cancellation, restart and retry. Use the owner-approved charging rule.",
+        "If the local webhook is retained, atomically record payment fulfillment or use a durable retryable inbox. Persist original product/user/credit amounts for reversals; if retired, disable it explicitly."
+      ],
+      "checks": [
+        "A duplicate or zero-amount refund returns the correct balance without exception.",
+        "Concurrent bonus, debit, and refund calls create exactly the permitted ledger entries, with no negative balances.",
+        "Crash injection between record and fulfillment leaves a recoverable operation, and replay completes it once.",
+        "Ledger totals reconcile to balances; fail/cancel/retry/low-disk paths match the documented charging policy."
+      ],
+      "deliver": "Migration, transactional ledger API, fault/concurrency tests, and accounting reconciliation command.",
+      "status": "OPEN",
+      "prompt": "prompts/08-atomic-local-ledger.md",
+      "evidence": null
+    },
+    {
+      "id": "09",
+      "slug": "request-idempotency",
+      "title": "Scope retries and duplicate requests correctly",
+      "kind": "Fix",
+      "priority": "P0 before relying on credits",
+      "deps": [
+        "02",
+        "03",
+        "08"
+      ],
+      "files": [
+        "backend/jobs.py",
+        "backend/database.py",
+        "backend/main.py",
+        "frontend/clpz.html",
+        "frontend-app/src/lib/api.ts"
+      ],
+      "finding": "An anonymous caller replaying another user's key receives the same job ID, although ownership checks still prevent reading it. Keys are globally mapped and not bound to operation/payload.",
+      "work": [
+        "Use a durable unique scope such as principal/local-workspace, operation, and key plus a canonical payload fingerprint; define the local identity lifetime so restart behavior is intentional.",
+        "Same scoped key and same request returns the original durable result; changed content returns 409. Upload fingerprints must distinguish differing media without buffering full files into RAM.",
+        "Tie job insertion, charge, and idempotency mapping to a recoverable atomic workflow. Do not evict active operations in cleanup.",
+        "Define rejected/cancelled/retried upload behavior and keep a stable key in the UI until that logical request is resolved."
+      ],
+      "checks": [
+        "Same key across different users and URL/upload operations does not deduplicate unrelated work.",
+        "Same key with changed URL/options/file returns 409 rather than a different or stale job.",
+        "Concurrent identical submissions create one job and one debit across restart.",
+        "Invalid uploads and cleanup do not trap users in unrecoverable dedupe results or permit duplicate charges."
+      ],
+      "deliver": "Scoped schema/migration, request fingerprint contract, client behavior, and concurrency/restart tests.",
+      "status": "OPEN",
+      "prompt": "prompts/09-request-idempotency.md",
+      "evidence": null
+    },
+    {
+      "id": "10",
+      "slug": "durable-projects-backups",
+      "title": "Make projects durable and backups restorable",
+      "kind": "Fix + addition",
+      "priority": "P1",
+      "deps": [
+        "02",
+        "05",
+        "08",
+        "09"
+      ],
+      "files": [
+        "backend/jobs.py",
+        "backend/database.py",
+        "backend/config.py",
+        "desktop/server.py",
+        "backend/clpz_server.py"
+      ],
+      "finding": "_persist swallows both file and database errors. Startup loads job.json while SQLite is also written. backup_database always uses the same filename and its second run fails.",
+      "work": [
+        "Choose the authoritative job/project store in the architecture contract; treat other snapshots as derived and reconcile existing installations through a migration.",
+        "Use atomic file replacement and explicit persistence failure handling. A failed commit must not be reported as durable success.",
+        "Implement versioned database backups with SQLite-safe snapshotting and a manifest for source media, transcripts, edit versions and outputs. Bind SQL values safely, including paths containing apostrophes.",
+        "Provide a documented restore-to-new-directory workflow with validation before switching active data, schema compatibility checks and recovery/rollback. Never overwrite the only working copy."
+      ],
+      "checks": [
+        "Two backups succeed with distinct destinations; backup paths containing spaces/quotes work.",
+        "Restore to a separate directory, reopen projects and decode exported media; compare counts/checksums.",
+        "Inject write failure/crash during a save: prior committed data survives and the UI receives a useful failure.",
+        "Old JSON/SQLite installations migrate once with no ghost projects, lost outputs, or silent state disagreement."
+      ],
+      "deliver": "Persistence migration, backup/restore tools, recovery runbook, and crash/restore evidence.",
+      "status": "OPEN",
+      "prompt": "prompts/10-durable-projects-backups.md",
+      "evidence": null
+    },
+    {
+      "id": "11",
+      "slug": "bounded-media-workers",
+      "title": "Bound heavy work and make cancellation reliable",
+      "kind": "Fix + foundation",
+      "priority": "P1",
+      "deps": [
+        "02",
+        "05",
+        "06",
+        "09",
+        "10"
+      ],
+      "files": [
+        "backend/jobs.py",
+        "backend/main.py",
+        "backend/proc.py",
+        "backend/pipeline/transcriber.py",
+        "backend/pipeline/downloader.py",
+        "backend/pipeline/cutter.py"
+      ],
+      "finding": "Deadlines are checked between stages; a stuck in-process model can retain a job slot. Queue threads are unbounded. Upload parsing precedes the copied-byte cap, synchronous probes run in an async handler, and edits bypass the job semaphore.",
+      "work": [
+        "Introduce bounded admission and worker execution shared by jobs and edits. Keep the HTTP loop responsive; return an explicit queue-full response before charging/admitting work.",
+        "Run uninterruptible heavy stages in supervised worker processes or an equivalent mechanism that can enforce real deadlines. Propagate cancellation to FFmpeg, ffprobe, transcription and descendants.",
+        "Limit incoming body bytes before full multipart parsing; also count streamed bytes when Content-Length is missing or false. Validate file/media constraints and reserve disk safely.",
+        "Use temporary outputs, per-clip coordination, deterministic cleanup, and durable progress/error transitions. Avoid process-kill implementations that can terminate unrelated user processes."
+      ],
+      "checks": [
+        "A deliberately stuck transcription worker is stopped within the configured deadline plus documented cleanup allowance; another queued job can proceed.",
+        "Cancellation works during download, audio extraction, transcription and edit rendering; no child or temp output remains.",
+        "Oversized/lying/chunked requests are rejected with bounded memory/disk use.",
+        "Concurrent imports/edits stay within configured limits and health/status requests remain responsive under load."
+      ],
+      "deliver": "Worker/admission design, implementation, resource settings, and measured cancellation/load tests.",
+      "status": "OPEN",
+      "prompt": "prompts/11-bounded-media-workers.md",
+      "evidence": null
+    },
+    {
+      "id": "12",
+      "slug": "desktop-launcher",
+      "title": "Repair installed Windows startup and shutdown",
+      "kind": "Fix",
+      "priority": "P1 release blocker",
+      "deps": [
+        "02",
+        "03"
+      ],
+      "files": [
+        "desktop/frozen_launcher.py",
+        "desktop/server.py",
+        "backend/clpz_server.py",
+        "packaging/build_windows.py",
+        "packaging/clpz_launcher.spec",
+        "backend/tests/test_desktop.py"
+      ],
+      "finding": "Assembly puts the server in clpz_server/clpz_server.exe but _spawn_server checks only the install root, then falls back to absent backend source. Watchdog replacement is not stored in the handle used on close. setdefault allows inherited debug=1.",
+      "work": [
+        "Use a single explicit package-layout contract for locating the installed server, binaries, frontends and models. A frozen launcher must never fall back to running itself as a Python interpreter.",
+        "Keep the active child handle under coordinated ownership after watchdog replacement; shut down the replacement and descendants on close.",
+        "Force production security settings in frozen mode while keeping developer opt-in separate. Use validated application readiness rather than a listening port alone.",
+        "Capture startup errors in user-accessible logs and a useful dialog. Handle occupied ports, missing runtime assets, non-ASCII/spaced paths and writable per-user data directories."
+      ],
+      "checks": [
+        "A staged install-layout test chooses clpz_server/clpz_server.exe exactly; missing assets fail clearly.",
+        "Run the installed build on a Windows account without Python; UI reaches /app.",
+        "Kill the backend, observe one managed replacement, close the window, and verify neither process remains.",
+        "Inherited CLPZ_DEBUG=1 cannot expose development endpoints in the frozen app; unrelated listeners cannot masquerade as readiness."
+      ],
+      "deliver": "Fixed launcher lifecycle, package-layout tests, and clean-machine startup/restart/shutdown evidence.",
+      "status": "OPEN",
+      "prompt": "prompts/12-desktop-launcher.md",
+      "evidence": null
+    },
+    {
+      "id": "13",
+      "slug": "release-build-toolchain",
+      "title": "Produce verified Windows installers and media tools",
+      "kind": "Fix + addition",
+      "priority": "P1 release blocker",
+      "deps": [
+        "02",
+        "12"
+      ],
+      "files": [
+        "packaging/build_windows.py",
+        "packaging/clpz_server.spec",
+        "packaging/clpz_launcher.spec",
+        "packaging/clpz_installer.iss",
+        "packaging/RELEASE_SHA256.txt",
+        "backend/bin/yt-dlp.exe",
+        "backend/pipeline/downloader.py",
+        "docs/RELEASE.md"
+      ],
+      "finding": "The bundled yt-dlp executable exits 1 on --version, while python -m yt_dlp works in the audit venv. The build does not rebuild React or invoke Inno Setup, passes --specpath with existing specs, and package audit can report clean on an absent/empty output.",
+      "work": [
+        "Diagnose the bundled downloader on a clean Windows machine; use a verified supported standalone artifact or a packaged module strategy, with provenance, checksum and version. Do not blindly replace binaries or depend on the developer's Python path.",
+        "Create one release command that builds required UI, freezes both executables using valid spec-mode options, assembles assets, bundles offline model/VAD files, and invokes Inno Setup.",
+        "Fail missing/empty package audits and missing binaries/models/fonts. Execute all bundled tools' version/smoke checks; do not accept file existence alone.",
+        "Centralize versioning; generate artifact hashes, dependency/native-tool notices and a release manifest. Separate assembly from signing/publishing and use explicit destinations. Document signing prerequisites without inventing certificates."
+      ],
+      "checks": [
+        "A clean build needs no stale dist or manually copied outputs and yields the documented installer filename.",
+        "Package checks fail if output is missing or one required asset/tool fails.",
+        "Install and process a local speech fixture offline on a machine with no Python; every bundled executable works.",
+        "Install, upgrade and uninstall retain user projects according to the documented policy; release hashes correspond to the actual tested files."
+      ],
+      "deliver": "Reproducible release command, verified tool/model acquisition, installer, manifest, and clean-machine procedure.",
+      "status": "OPEN",
+      "prompt": "prompts/13-release-build-toolchain.md",
+      "evidence": null
+    },
+    {
+      "id": "14",
+      "slug": "cloud-schema",
+      "title": "Finish and test the cloud data foundation",
+      "kind": "Fix + foundation",
+      "priority": "P0 before paid cloud launch",
+      "deps": [
+        "01",
+        "02",
+        "08",
+        "09"
+      ],
+      "files": [
+        "supabase/migrations/0001_initial_schema.sql",
+        "supabase/README.md",
+        "website/lib/supabase-admin.ts",
+        "website/lib/supabase/server.ts"
+      ],
+      "finding": "PUBLIC execution is now revoked in source, but no applied-role test was run. grant_credits checks external_ref plus txn_type rather than the supplied key/user; idempotency_key is globally unique. The promised subscription lifecycle is not fully constrained.",
+      "work": [
+        "Add forward migrations for already-created databases; do not rely on editing migration 0001 to repair deployed projects.",
+        "Make cloud ledger replay scope and payload conflict behavior transaction-safe. Use locking/unique constraints so concurrent calls return a defined result instead of misgranting or failing unpredictably.",
+        "Test real database roles: anon, authenticated user A, user B, and service role. Preserve restricted RPC execution and RLS on user/business tables.",
+        "Define subscription status/uniqueness, entitlement lifecycle and payment relationships; align profile metadata with website full_name/display_name fields. Review profile mutation and delete/account-lifecycle behavior. Use only a disposable/local database until deployment is separately authorized.",
+        "Model expiring subscription credits separately from never-expiring purchased credits if the current advertised 60-day rollover policy is retained. Define spend order, expiry, renewal and refund allocation; a single undifferentiated balance is insufficient."
+      ],
+      "checks": [
+        "Fresh migration and upgrade from the previous schema both succeed and retain data.",
+        "Anon and normal users cannot grant credits or write payments/entitlements; A cannot read B's rows.",
+        "Concurrent same-key grants apply once; different users/references are not incorrectly suppressed; changed payloads are rejected.",
+        "Subscription and profile constraints are demonstrated with SQL assertions, including invalid state transitions and role-based access."
+      ],
+      "deliver": "Forward migrations, local database test harness, role/concurrency tests, and migration/rollback instructions.",
+      "status": "OPEN",
+      "prompt": "prompts/14-cloud-schema.md",
+      "evidence": null
+    },
+    {
+      "id": "15",
+      "slug": "payment-fulfillment",
+      "title": "Connect purchases to accounts and entitlements",
+      "kind": "Addition + fix",
+      "priority": "P0 before accepting payment",
+      "deps": [
+        "01",
+        "02",
+        "14"
+      ],
+      "files": [
+        "website/app/api/checkout-link/route.ts",
+        "website/app/api/gumroad/ping/route.ts",
+        "website/app/buy/page.tsx",
+        "website/components/gumroad-checkout-bridge.tsx",
+        "website/lib/supabase-admin.ts",
+        "backend/gumroad.py",
+        "supabase/migrations/0001_initial_schema.sql"
+      ],
+      "finding": "The current website webhook upserts payment fields but never associates a user or grants credits/entitlements. One configured product permalink is accepted despite multiple checkout products. Replayed paid events can overwrite a later refund status. The /buy page says coming soon, but GumroadCheckoutBridge rewrites links to live checkout whenever URLs are configured; this is not an explicit launch gate.",
+      "work": [
+        "Verify the current provider contract from official documentation and captured sandbox deliveries; do not reuse the local signed-JSON assumption for the website's form-based Ping route.",
+        "Create server-controlled checkout/account association and product-to-entitlement mapping for every advertised plan. Verify buyer/account association; an arbitrary client-supplied user ID is not sufficient.",
+        "Persist a durable webhook inbox and implement atomic or reliably retryable fulfillment, with dedupe and ordered state transitions for purchases, renewals, refunds/disputes and cancellations. Store original granted amounts and product versions.",
+        "Add reconciliation for unlinked/failed events and provider redelivery, redacted diagnostics and a support resolution path. Use the owner-approved refund/offline/credit policies; do not execute live charges during development.",
+        "Add a fail-closed checkout feature gate until lifecycle acceptance passes, independent of configured URLs. Reconcile displayed prices/credits/rollover promises with provider products and database rules."
+      ],
+      "checks": [
+        "A sandbox purchase grants only the intended account/product once; anonymous/unlinked purchases remain recoverable.",
+        "Duplicates, concurrent deliveries, old paid events after refunds, and crashes between receipt/grant produce correct final state.",
+        "All offered products are tested; malformed/unauthorized events fail without fulfillment.",
+        "Reconciliation finds and resolves an intentionally interrupted delivery; the provider event and database ledger can be traced without exposing secrets."
+      ],
+      "deliver": "Provider contract fixtures, payment/account mapping, fulfillment/reconciliation implementation, and lifecycle evidence.",
+      "status": "OPEN",
+      "prompt": "prompts/15-payment-fulfillment.md",
+      "evidence": null
+    },
+    {
+      "id": "16",
+      "slug": "shared-identity-entitlements",
+      "title": "Connect desktop and mobile to shared accounts",
+      "kind": "Addition",
+      "priority": "P1 for commercial release",
+      "deps": [
+        "01",
+        "03",
+        "04",
+        "14",
+        "15"
+      ],
+      "files": [
+        "desktop/app.py",
+        "desktop/frozen_launcher.py",
+        "backend/auth.py",
+        "backend/main.py",
+        "frontend/clpz.html",
+        "mobile-android/app/src/main/java/com/clpz/mobile/AuthRepository.kt",
+        "website/app/auth/callback/route.ts",
+        "website/app/account/page.tsx"
+      ],
+      "finding": "Website and Android use Supabase, but desktop uses local SQLite sessions. There is no implemented website-to-desktop account/entitlement handoff; editable local credits cannot enforce paid cloud balances.",
+      "work": [
+        "Design shared cloud identity and a secure desktop sign-in handoff with verified callback binding, expiring one-use exchange/state and replay protection. Prefer supported browser auth flows and do not pass long-lived credentials in links.",
+        "Keep processing/media local; cache only the minimum identity/entitlement data needed, store refresh credentials in platform-protected storage, and clear them on sign-out.",
+        "Implement server-authoritative entitlement and any usage-reservation/settlement API required by the chosen commercial model; never trust a desktop-reported balance.",
+        "Define offline grace, expiration/revocation, clock rollback, multi-device use and failed-job accounting. If these business choices are unresolved, finish the local protocol/tests with explicit blockers rather than silently choosing a paid policy."
+      ],
+      "checks": [
+        "The same cloud account sees the same purchased access on website, desktop and Android where supported.",
+        "A copied/replayed/expired callback cannot sign another installation in; wrong state/issuer/audience fails.",
+        "Editing local SQLite cannot mint cloud credits; duplicate reserve/settle operations are idempotent.",
+        "Offline, expiry, revocation, restart and sign-out behave exactly as the approved policy and never upload media."
+      ],
+      "deliver": "Identity/entitlement protocol, secure client storage/handoff, local/cloud tests, and owner policy record.",
+      "status": "OPEN",
+      "prompt": "prompts/16-shared-identity-entitlements.md",
+      "evidence": null
+    },
+    {
+      "id": "17",
+      "slug": "website-account-download",
+      "title": "Complete the website account and download journey",
+      "kind": "Addition + fix",
+      "priority": "P1",
+      "deps": [
+        "01",
+        "02",
+        "14",
+        "15",
+        "16"
+      ],
+      "files": [
+        "website/app/login/auth-form.tsx",
+        "website/app/login/google-button.tsx",
+        "website/app/auth/callback/route.ts",
+        "website/app/account/page.tsx",
+        "website/app/download/route.ts",
+        "website/app/download/android/route.ts",
+        "website/.env.example",
+        "website/vercel.json",
+        "vercel.json"
+      ],
+      "finding": "The current website builds and lints successfully, and its Google action exists. Account page only offers downloads; password recovery is absent from the form. Download destinations and Vercel build-root instructions differ across files. A local Node URL probe shows that next=/\\\\untrusted.example passes the callback guard but resolves to an external origin; this is a confirmed validation defect, not a demonstrated stolen session.",
+      "work": [
+        "Complete confirmation, login/logout, expired session, password reset/recovery and provider-error states with accessible feedback.",
+        "Show real subscription/credits/entitlements from the cloud contract. Do not display a successful purchase merely because the browser returned from checkout.",
+        "Resolve one deployment-root convention with deterministic installs and validated configuration; make missing config and unavailable downloads understandable.",
+        "Choose one release source per platform, validate URLs and artifact versions/hashes, distinguish Android preview from stable Windows, and test redirect safety including slash/backslash-encoded callback variants.",
+        "Fix callback redirects by resolving against the approved origin and checking the normalized destination origin/path, rather than relying on startsWith alone. Test the URL logic without requiring real OAuth credentials."
+      ],
+      "checks": [
+        "New user confirmation, Google sign-in, forgotten password, logout and expired callback all have browser-test coverage.",
+        "Account data is isolated by user and updates after verified fulfillment.",
+        "Download links resolve to the intended tested artifact in staging; a missing artifact produces useful UI.",
+        "Keyboard/mobile-width/accessibility checks pass; both build and production serving work using the documented root/settings.",
+        "Backslash, double-slash, encoded and absolute external next values cannot redirect outside the site after OAuth; approved relative paths still work."
+      ],
+      "deliver": "Complete account/download flows, configuration/runbook, and browser/staging test evidence.",
+      "status": "OPEN",
+      "prompt": "prompts/17-website-account-download.md",
+      "evidence": null
+    },
+    {
+      "id": "18",
+      "slug": "editor-project-contract",
+      "title": "Finish the desktop editor without losing existing work",
+      "kind": "Addition + fix",
+      "priority": "P1",
+      "deps": [
+        "01",
+        "02",
+        "06",
+        "07",
+        "10",
+        "11"
+      ],
+      "files": [
+        "frontend/clpz.html",
+        "frontend-app/src/App.tsx",
+        "frontend-app/src/pages/app/Editor.tsx",
+        "frontend-app/src/lib/api.ts",
+        "backend/main.py",
+        "backend/jobs.py"
+      ],
+      "finding": "The active editor already has localStorage drafts and speed/mute/trim preview support. Text overlays are listed rather than rendered over the preview; drafts/exports are not durable backend edit versions. React workspace components are not routed.",
+      "work": [
+        "Extend the shipping UI chosen in task 01. Preserve its working drafts, keyboard controls and visual design; do not build the same feature in two separate workspaces.",
+        "Create a versioned edit/project schema and API covering source range, speed, volume, mute, overlays and supported caption/crop controls. Keep original media immutable.",
+        "Render overlays/captions at the correct preview coordinates and synchronize all controls, undo/redo, trim playback and saved versions. Clearly show any intentional preview/export limitation such as volume amplification.",
+        "Persist and reopen edit versions, expose resulting exports with their version/metadata, and validate schema migrations for existing localStorage drafts. Add functional client-contract tests instead of checking for strings in source.",
+        "Inventory remaining React login/animation code: if retained, connect or remove inactive reset/Google controls, associate labels, release WebGL resources and respect reduced motion/hidden pages; if retired, remove routes/assets through a documented migration rather than maintaining a second public account system."
+      ],
+      "checks": [
+        "Edit, close, restart, reopen and export: the same choices are restored and output matches preview within stated rendering tolerances.",
+        "Text punctuation/Unicode and resized preview coordinate mapping remain correct.",
+        "Undo/redo and keyboard focus work; malformed/stale drafts recover without destroying a valid project.",
+        "No navigation opens an unrouted React editor; API response/types match runtime behavior."
+      ],
+      "deliver": "Versioned project/edit contract, preview and persistence integration, migration, and visual plus functional evidence.",
+      "status": "OPEN",
+      "prompt": "prompts/18-editor-project-contract.md",
+      "evidence": null
+    },
+    {
+      "id": "19",
+      "slug": "project-library-storage",
+      "title": "Add safe project deletion and scalable library browsing",
+      "kind": "Addition + fix",
+      "priority": "P2 before larger libraries",
+      "deps": [
+        "03",
+        "09",
+        "10",
+        "11",
+        "18"
+      ],
+      "files": [
+        "backend/main.py",
+        "backend/jobs.py",
+        "backend/database.py",
+        "frontend/clpz.html",
+        "frontend-app/src/lib/api.ts"
+      ],
+      "finding": "List requests copy all jobs and include detailed clip/word data. Metadata backfill can run media tools while serving reads. Search is client-side and there is no ordinary per-project delete/storage workflow.",
+      "work": [
+        "Add paginated lightweight summaries with search/sort, separate detail queries, and storage usage summaries. Preserve compatibility or version the client change.",
+        "Move metadata backfill to controlled background work so GET requests never launch surprise render/probe workloads.",
+        "Provide a project deletion workflow with explicit scope: project working files versus separately exported user files. Coordinate deletion with active workers and ledger/idempotency retention.",
+        "Keep retention user-controlled, validate resolved deletion paths against the managed data root, and offer recovery/trash policy where practical. Do not delete external source files or user exports by default."
+      ],
+      "checks": [
+        "Seed a large synthetic library and measure bounded summary size and query latency without FFmpeg calls in GET.",
+        "Pagination remains stable under new jobs and respects ownership.",
+        "Delete while queued/running/restarting does not recreate ghost jobs or delete outside the data root.",
+        "The user can see disk usage and remove a project while preserving original imported/external and separately exported files per the stated policy."
+      ],
+      "deliver": "Library API/UI, background backfill, storage/deletion contract and scale/race tests.",
+      "status": "OPEN",
+      "prompt": "prompts/19-project-library-storage.md",
+      "evidence": null
+    },
+    {
+      "id": "20",
+      "slug": "android-readiness",
+      "title": "Make Android preview reliable and accurately described",
+      "kind": "Fix + addition",
+      "priority": "P1 for Android launch",
+      "deps": [
+        "01",
+        "02",
+        "14",
+        "16"
+      ],
+      "files": [
+        "mobile-android/app/src/main/java/com/clpz/mobile/MainActivity.kt",
+        "mobile-android/app/src/main/java/com/clpz/mobile/ProjectStore.kt",
+        "mobile-android/app/src/main/java/com/clpz/mobile/VideoExporter.kt",
+        "mobile-android/app/src/main/java/com/clpz/mobile/VideoEffects.kt",
+        "mobile-android/app/src/androidTest/java/com/clpz/mobile/StudioFlowTest.kt",
+        ".github/workflows/android-apk.yml",
+        "mobile-android/README.md"
+      ],
+      "finding": "Android suggestions are fixed timeline positions, not semantic analysis. The workflow publishes a debug APK before its downstream interface checks finish. Local project persistence/export exist but device lifecycle and production signing were not verified.",
+      "work": [
+        "Label automatic suggestions as timeline drafts unless genuine analysis is separately implemented and evaluated. Do not assume an Android-to-local-FastAPI connection or add hosted video upload without a product decision.",
+        "Test and harden project persistence and source URI permissions across process death, revoked/moved files, rotation, duplicate saves, cancellation and low disk.",
+        "Validate exported trim, mute, aspect ratio and caption styles on real media/devices; expose useful recoverable export failures.",
+        "Make publication depend on required successful build/test jobs; separate preview and production channels, use a maintained Gradle wrapper/checksum and release signing strategy, and preserve the signing identity for upgrades. Keep keys outside source/APKs."
+      ],
+      "checks": [
+        "Import/save/kill/reopen/export succeeds on the supported minimum and a current Android version.",
+        "Source permission loss or missing media is recoverable; repeated saves do not duplicate project IDs.",
+        "Cancel/delete during export cleans partial files and does not report success.",
+        "A deliberately failed interface test prevents publication; signed upgrades preserve local projects and authentication as specified."
+      ],
+      "deliver": "Android stability changes, accurate feature scope, device/emulator report and gated release pipeline.",
+      "status": "OPEN",
+      "prompt": "prompts/20-android-readiness.md",
+      "evidence": null
+    },
+    {
+      "id": "21",
+      "slug": "media-quality-benchmarks",
+      "title": "Establish measurable clip quality and performance",
+      "kind": "Addition",
+      "priority": "P1 before product claims",
+      "deps": [
+        "05",
+        "06",
+        "07",
+        "11",
+        "13",
+        "18"
+      ],
+      "files": [
+        "backend/pipeline/analyzer.py",
+        "backend/pipeline/transcriber.py",
+        "backend/pipeline/captions.py",
+        "backend/pipeline/cutter.py",
+        "docs/audit_pipeline.py",
+        "backend/tests/fixtures/generate_video.py",
+        "README.md"
+      ],
+      "finding": "Prior evidence includes one short successful speech clip, not general quality/performance proof. Candidate ranking is heuristic with optional semantic ranking. Long videos, varied speakers/languages, crops and low-resource behavior need measured acceptance.",
+      "work": [
+        "Create a licensed/local fixture catalog: short and long speech, silence, multiple speakers, screen-share/facecam, portrait/landscape, variable frame rate, rotation metadata and agreed languages.",
+        "Measure timing per stage, peak RAM/disk, output validity, A/V sync, caption timing, crop subject retention and candidate completeness/nonduplication.",
+        "Define machine/hardware profiles and explicit pass thresholds before comparing outcomes; distinguish objective checks from human editorial ratings.",
+        "Evaluate optional semantic dependencies, fallback behavior and model/license provenance. Fix demonstrated quality failures within scope and align marketing claims with measured capability; do not promise viral performance or perfect transcription."
+      ],
+      "checks": [
+        "Publish repeatable commands, fixture provenance/hashes, machine specs, thresholds and results.",
+        "Decode exported media and inspect representative frames/audio; no placeholder outputs pass.",
+        "Long-video cancellation/low-disk/low-RAM cases fail gracefully and retain recoverable project state.",
+        "A regression baseline makes future quality/speed changes comparable; untested languages/hardware remain explicitly unverified."
+      ],
+      "deliver": "Fixture/benchmark harness, quality rubric, measured report and supported-capability statement.",
+      "status": "OPEN",
+      "prompt": "prompts/21-media-quality-benchmarks.md",
+      "evidence": null
+    },
+    {
+      "id": "22",
+      "slug": "release-acceptance",
+      "title": "Run end-to-end acceptance and prepare operations",
+      "kind": "Verification + foundation",
+      "priority": "Final gate",
+      "deps": [
+        "01",
+        "02",
+        "03",
+        "04",
+        "05",
+        "06",
+        "07",
+        "08",
+        "09",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21"
+      ],
+      "files": [
+        "docs/foundation/ACCEPTANCE.md",
+        "docs/RELEASE.md",
+        "docs/DEPLOYMENT.md",
+        "docs/PRODUCTION_CONFIG.md",
+        "website/app/api/health/route.ts",
+        "backend/clpz_server.py",
+        ".github/workflows/ci.yml",
+        ".github/workflows/android-apk.yml"
+      ],
+      "finding": "Passing builds and a small test suite do not prove a working paid product, safe update, restored project, or clean-device installer. No full current release acceptance has been performed.",
+      "work": [
+        "Run the release-scope acceptance matrix on the actual artifacts, not just development source; trace every task to evidence and recorded decisions.",
+        "Test Windows install/import/transcribe/edit/export/restart/upgrade/uninstall/restore and the cloud signup/purchase/fulfill/revoke/offline journey where in scope. Verify Android separately; defer it explicitly if not in this release.",
+        "Add redacted diagnostic bundles, job/event correlation, support runbooks for failed processing/payments, and tested release rollback. Keep credentials, raw media and transcripts out of default support bundles.",
+        "Verify dependency/native-binary provenance, secret scans, artifact hashes/signatures and download URLs; record outstanding risks and unverified external steps honestly. Prepare release notes and staging evidence; do not publish or charge customers as an incidental verification step."
+      ],
+      "checks": [
+        "Every in-scope acceptance row has command/manual procedure, expected result, actual result and evidence for the exact commit/artifact hash.",
+        "No open P0/P1 blocker in the chosen release scope; an unavailable service/device is BLOCKED, not PASS.",
+        "An independent person follows the setup/release/restore runbooks without undocumented steps.",
+        "The final report distinguishes verified local behavior, staging/provider evidence, manual checks and approved deferrals; it never claims universal 100% correctness."
+      ],
+      "deliver": "Completed acceptance matrix, release evidence bundle, support/rollback runbooks and explicit go/no-go recommendation.",
+      "status": "OPEN",
+      "prompt": "prompts/22-release-acceptance.md",
+      "evidence": null
+    }
+  ]
+}

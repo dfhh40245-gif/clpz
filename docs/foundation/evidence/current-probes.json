@@ -1,0 +1,75 @@
+{
+  "data_directory": "C:\\Users\\REPAIR~1\\AppData\\Local\\Temp\\clpz-foundation-probe-1zt0kkis",
+  "python": "3.12.14",
+  "admin_bootstrap": {
+    "email_verified": false,
+    "admin_status": 200
+  },
+  "password_reset_throttle": [
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401
+  ],
+  "duplicate_refund": {
+    "probe_error": "NameError",
+    "message": "name 'get_credit_balance' is not defined"
+  },
+  "cross_owner_replay": {
+    "same_job": true,
+    "anonymous_status": 200,
+    "anonymous_read_status": 404
+  },
+  "local_boundary": {
+    "untrusted_origin_cancel": 200,
+    "untrusted_host_list": 200
+  },
+  "export_normal": {
+    "status": 200,
+    "detail": "success"
+  },
+  "export_muted": {
+    "status": 500,
+    "detail": "Edited output invalid: No audio stream found."
+  },
+  "export_quarter_speed": {
+    "status": 500,
+    "detail": "Edit render failed: FFmpeg failed: ](und): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 70 kb/s (default)\n    Metadata:\n      handler_name    : SoundHandler\n[Parsed_atempo_0 @ 00000160af94e680] Value 0.250000 for parameter 'tempo' out of range [0.5 - 100]\n[fc#-1 @ 00000160af94e1c0] Error applying option 'tempo' to filter 'atempo': Result too large\nError opening output file C:\\Users\\REPAIR~1\\AppData\\Local\\Temp\\clpz-foundation-probe-1zt0kkis\\d57c676e0df5\\clip_0_edited.mp4.\nError opening output files: Result too large\n"
+  },
+  "retry_after_analysis": {
+    "stage": "error",
+    "error": "cannot access local variable 'transcript' where it is not associated with a value"
+  },
+  "overlap": {
+    "expected_words": 2,
+    "actual_words": 4,
+    "actual_segments": 2
+  },
+  "first_backup": "C:\\Users\\REPAIR~1\\AppData\\Local\\Temp\\clpz-foundation-probe-1zt0kkis\\clpz.db.bak",
+  "second_backup": {
+    "probe_error": "OperationalError",
+    "message": "output file already exists"
+  },
+  "packaged_launcher_path": {
+    "expected_executable": "C:\\Users\\REPAIR~1\\AppData\\Local\\Temp\\clpz-foundation-probe-1zt0kkis\\package\\clpz_server\\clpz_server.exe",
+    "actual_command": [
+      "C:\\Users\\RepairTest\\Desktop\\clpz-actual\\.venv\\Scripts\\python.exe",
+      "C:\\Users\\REPAIR~1\\AppData\\Local\\Temp\\clpz-foundation-probe-1zt0kkis\\package\\backend\\clpz_server.py",
+      "serve",
+      "--port",
+      "8765"
+    ],
+    "matched": false
+  }
+}

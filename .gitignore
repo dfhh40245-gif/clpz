@@ -62,3 +62,9 @@ mobile-android/local.properties
 mobile-android/**/build/
 docs/ui-checks/
 .android-run-logs*
+
+# Build artifacts and signing material (never commit)
+website/tsconfig.tsbuildinfo
+*.tsbuildinfo
+*.jks
+*.keystore

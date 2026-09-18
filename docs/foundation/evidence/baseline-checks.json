@@ -1,0 +1,110 @@
+{
+  "audit_date": "2026-09-17",
+  "baseline_commit": "76e4b0a",
+  "tracked_files": 199,
+  "application_source_changed": false,
+  "environment": {
+    "os": "Windows",
+    "python": "3.12.14",
+    "node": "24.19.0",
+    "vite": "8.2.2",
+    "next": "16.3.4",
+    "python_environment": "new repository .venv; backend requirements plus python-multipart pytest requests httpx",
+    "javascript_environment": "pre-existing node_modules; npm unavailable on PATH; CLI entry points called using node"
+  },
+  "checks": [
+    {
+      "name": "backend non-slow suite",
+      "command": "python -m pytest tests -m \"not slow\" -q --tb=short",
+      "cwd": "backend",
+      "exit_code": 1,
+      "passed": 110,
+      "failed": 2,
+      "skipped": 1,
+      "deselected": 9,
+      "seconds": 61.32,
+      "failures": [
+        "TestCreditDeduction.test_insufficient_credits: expected 402, got 200",
+        "TestBundledBinaries.test_ytdlp_found: executable --version returned 1"
+      ]
+    },
+    {
+      "name": "isolated credit exhaustion retest",
+      "command": "python -m pytest tests/test_credits.py::TestCreditDeduction::test_insufficient_credits -q --tb=short",
+      "cwd": "backend",
+      "exit_code": 1,
+      "failed": 1,
+      "seconds": 1.84
+    },
+    {
+      "name": "Python dependency consistency",
+      "command": ".venv/Scripts/python.exe -m pip check",
+      "exit_code": 0,
+      "result": "No broken requirements found"
+    },
+    {
+      "name": "React build",
+      "command": "node node_modules/typescript/bin/tsc -b; then node node_modules/vite/bin/vite.js build",
+      "cwd": "frontend-app",
+      "exit_code": 0
+    },
+    {
+      "name": "frontend regression suite",
+      "command": "node node_modules/vitest/vitest.mjs run",
+      "cwd": "frontend-app",
+      "exit_code": 0,
+      "passed": 3,
+      "test_files": 1
+    },
+    {
+      "name": "React lint",
+      "command": "node frontend-app/node_modules/oxlint/bin/oxlint --config frontend-app/.oxlintrc.json frontend-app/src",
+      "exit_code": 0,
+      "warnings": 9
+    },
+    {
+      "name": "website build",
+      "command": "node node_modules/next/dist/bin/next build",
+      "cwd": "website",
+      "exit_code": 0,
+      "note": "Next reported .env.local; values not inspected or recorded"
+    },
+    {
+      "name": "website lint",
+      "command": "node node_modules/eslint/bin/eslint.js .",
+      "cwd": "website",
+      "exit_code": 0
+    },
+    {
+      "name": "bundled downloader smoke",
+      "command": "backend/bin/yt-dlp.exe --version",
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "installed Python downloader",
+      "command": ".venv/Scripts/python.exe -m yt_dlp --version",
+      "exit_code": 0,
+      "version": "2026.08.19"
+    },
+    {
+      "name": "callback redirect expression",
+      "input": "/\\untrusted.example",
+      "base": "https://clpz.example",
+      "passes_current_guard": true,
+      "resolved": "https://untrusted.example/",
+      "scope": "pure Node URL expression, no live OAuth request"
+    }
+  ],
+  "not_run": [
+    "clean npm ci",
+    "full speech pipeline and long-video benchmark",
+    "packaged Windows installer/native desktop UI",
+    "Android build/device",
+    "Supabase database roles/migrations",
+    "provider payment lifecycle",
+    "live OAuth flow",
+    "comprehensive vulnerability or accessibility review"
+  ]
+}

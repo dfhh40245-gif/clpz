@@ -1,0 +1,22 @@
+Audit date: 2026-09-17
+Baseline commit: 76e4b0a
+Command, from backend: python -m pytest tests -m "not slow" -q --tb=short
+Interpreter: repository .venv, Python 3.12.14
+Exit code: 1
+
+FAILED tests/test_credits.py::TestCreditDeduction::test_insufficient_credits
+  tests/test_credits.py:69: expected HTTP 402; actual HTTP 200
+FAILED tests/test_desktop.py::TestBundledBinaries::test_ytdlp_found
+  tests/test_desktop.py:52: expected yt-dlp.exe --version exit 0; actual exit 1
+  stdout and stderr were empty.
+
+2 failed, 110 passed, 1 skipped, 9 deselected in 61.32s
+
+Targeted retest:
+python -m pytest tests/test_credits.py::TestCreditDeduction::test_insufficient_credits -q --tb=short
+Exit code: 1
+1 failed in 1.84s; same 200 versus 402 assertion.
+
+This is a transcription of the observed result summary, not the full test log.
+Tests were run against unchanged application source with extra dependencies
+installed as described in baseline-checks.json. See AUDIT.md for limitations.
