@@ -1,3 +1,22 @@
-# Deploy only the public Next.js storefront from this multi-application repository.
-# The root CLI deployment is intentionally disabled. Deploy from `website/`.
-*
+# Vercel root-project deployments: upload only what the root build needs.
+#
+# History: this file previously contained a bare `*` (ignore everything).
+# That worked when deploys were made from `website/` as the project root,
+# but against the root-project setup (root vercel.json + npm --prefix
+# website ...) it uploads a tree with no files at all, so
+# `npm --prefix website install` fails with ENOENT (exit 254).
+#
+# Keep the upload minimal but functional: exclude the heavy media/tooling
+# trees and local-only folders, keep everything the build reads.
+backend/bin/
+backend/test_data/
+data/
+data-experimental/
+docs/ui-checks/
+docs/local-experimental/
+frontend-app/node_modules/
+website/node_modules/
+website/.next/
+website/.vercel/
+mobile-android/build/
+mobile-android/.gradle/
